@@ -50,6 +50,7 @@ class HarmonySinger {
 
         // Harmony intervals for different modes
         this.harmonyModes = {
+            unison: { lower: 0, upper: 0 },       // Same tone (doubles your voice)
             thirds: { lower: -4, upper: 3 },      // Minor 3rd down, Major 3rd up
             fifths: { lower: -7, upper: 7 },      // Perfect 5th down/up
             octaves: { lower: -12, upper: 12 },   // Octave down/up
@@ -66,6 +67,9 @@ class HarmonySinger {
                 bass: -12      // Octave down
             }
         };
+
+        // Harmony position: 'both', 'above', or 'below'
+        this.harmonyPosition = 'both';
 
         this.initUI();
     }
@@ -120,8 +124,25 @@ class HarmonySinger {
             });
         });
 
+        // Harmony position buttons (above/below/both)
+        document.querySelectorAll('.position-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.setPosition(e.target.dataset.position));
+        });
+
         // Initialize canvas
         this.setupCanvas();
+    }
+
+    setPosition(position) {
+        this.harmonyPosition = position;
+
+        // Update UI
+        document.querySelectorAll('.position-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.position === position);
+        });
+
+        // Update gains to reflect new position
+        this.updateGains();
     }
 
     setupCanvas() {
@@ -257,9 +278,17 @@ class HarmonySinger {
         Object.keys(this.gains).forEach(key => {
             if (this.gains[key]) {
                 if (this.currentMode === 'choir' || this.currentMode === 'barbershop') {
+                    // For choir modes, check individual voice toggles
                     this.gains[key].gain.value = this.choirVoices[key] ? this.harmonyVolume * 0.5 : 0;
                 } else {
-                    this.gains[key].gain.value = this.harmonyVolume * 0.6;
+                    // For simple modes, check harmony position
+                    let shouldPlay = true;
+                    if (this.harmonyPosition === 'above' && key === 'lower') {
+                        shouldPlay = false;
+                    } else if (this.harmonyPosition === 'below' && key === 'upper') {
+                        shouldPlay = false;
+                    }
+                    this.gains[key].gain.value = shouldPlay ? this.harmonyVolume * 0.6 : 0;
                 }
             }
         });
