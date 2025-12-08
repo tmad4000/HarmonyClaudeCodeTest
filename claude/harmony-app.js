@@ -23,6 +23,8 @@ class HarmonySinger {
         this.dryVolume = 0.8;
         this.reverbAmount = 0.3;
         this.smoothing = 0.5;
+        this.speakerMode = false; // Enable AEC for speaker use (no headphones)
+        this.mediaStream = null; // Native MediaStream for AEC control
 
         // Pitch detection
         this.audioContext = null;
@@ -129,6 +131,12 @@ class HarmonySinger {
             btn.addEventListener('click', (e) => this.setPosition(e.target.dataset.position));
         });
 
+        // Speaker mode toggle (AEC for no headphones)
+        const speakerToggle = document.getElementById('speakerModeToggle');
+        if (speakerToggle) {
+            speakerToggle.addEventListener('click', () => this.toggleSpeakerMode());
+        }
+
         // Initialize canvas
         this.setupCanvas();
     }
@@ -143,6 +151,27 @@ class HarmonySinger {
 
         // Update gains to reflect new position
         this.updateGains();
+    }
+
+    toggleSpeakerMode() {
+        this.speakerMode = !this.speakerMode;
+
+        // Update UI
+        const toggle = document.getElementById('speakerModeToggle');
+        if (toggle) {
+            toggle.classList.toggle('on', this.speakerMode);
+        }
+
+        const statusText = document.getElementById('speakerModeStatus');
+        if (statusText) {
+            statusText.textContent = this.speakerMode ? 'Speaker Mode (AEC On)' : 'Headphone Mode';
+        }
+
+        // If currently running, need to restart with new audio constraints
+        if (this.isRunning) {
+            this.stop();
+            setTimeout(() => this.start(), 100);
+        }
     }
 
     setupCanvas() {
@@ -165,9 +194,36 @@ class HarmonySinger {
         try {
             await Tone.start();
 
-            // Create microphone input
-            this.mic = new Tone.UserMedia();
-            await this.mic.open();
+            // Get the underlying audio context
+            this.audioContext = Tone.getContext().rawContext;
+
+            // Configure audio constraints based on speaker mode
+            const audioConstraints = {
+                echoCancellation: this.speakerMode,
+                noiseSuppression: this.speakerMode,
+                autoGainControl: this.speakerMode,
+                // Request specific sample rate for consistency
+                sampleRate: this.audioContext.sampleRate
+            };
+
+            console.log('Audio constraints:', audioConstraints);
+
+            // Get microphone with native getUserMedia for AEC control
+            this.mediaStream = await navigator.mediaDevices.getUserMedia({
+                audio: audioConstraints
+            });
+
+            // Log actual constraints applied
+            const track = this.mediaStream.getAudioTracks()[0];
+            const settings = track.getSettings();
+            console.log('Actual audio settings:', settings);
+
+            // Create a Tone.js source from the native MediaStream
+            this.micSource = this.audioContext.createMediaStreamSource(this.mediaStream);
+
+            // Wrap in Tone.js gain for compatibility with Tone routing
+            this.mic = new Tone.Gain(1);
+            this.micSource.connect(this.mic.input);
 
             // Create analyser for pitch detection
             this.analyser = new Tone.Analyser('waveform', 2048);
@@ -198,9 +254,6 @@ class HarmonySinger {
 
             // Connect pitch shifters
             this.connectPitchShifters();
-
-            // Get the underlying audio context for pitch detection
-            this.audioContext = Tone.getContext().rawContext;
 
             // Use AnalyserNode for pitch detection
             this.pitchAnalyser = this.audioContext.createAnalyser();
@@ -297,8 +350,22 @@ class HarmonySinger {
     stop() {
         this.isRunning = false;
 
+        // Stop the native MediaStream tracks
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach(track => track.stop());
+            this.mediaStream = null;
+        }
+
+        // Disconnect the native media source
+        if (this.micSource) {
+            this.micSource.disconnect();
+            this.micSource = null;
+        }
+
+        // Dispose Tone.js mic wrapper
         if (this.mic) {
-            this.mic.close();
+            this.mic.dispose();
+            this.mic = null;
         }
 
         if (this.pitchAnalyser) {
