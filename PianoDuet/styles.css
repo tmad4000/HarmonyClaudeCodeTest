@@ -1,0 +1,368 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    color: #fff;
+    overflow-x: hidden;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+h1 {
+    font-size: 3rem;
+    font-weight: 300;
+    letter-spacing: 4px;
+    background: linear-gradient(90deg, #e94560, #f39c12, #e94560);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+    to { background-position: 200% center; }
+}
+
+.subtitle {
+    color: #888;
+    margin-top: 10px;
+    font-size: 1.1rem;
+}
+
+/* Controls */
+.controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.control-group label {
+    font-size: 0.85rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+input[type="range"] {
+    width: 150px;
+    height: 6px;
+    -webkit-appearance: none;
+    background: linear-gradient(90deg, #333, #555);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #e94560;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+    transition: transform 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+select {
+    padding: 10px 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+select:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #e94560;
+}
+
+select option {
+    background: #1a1a2e;
+    color: #fff;
+}
+
+/* Duet Button */
+.duet-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #333, #444);
+    border: 2px solid #555;
+    border-radius: 30px;
+    color: #aaa;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.duet-btn:hover {
+    border-color: #e94560;
+    color: #fff;
+}
+
+.duet-btn.active {
+    background: linear-gradient(135deg, #e94560, #f39c12);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 0 30px rgba(233, 69, 96, 0.4);
+}
+
+.duet-icon {
+    font-size: 1.5rem;
+}
+
+/* Piano Container */
+.piano-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.octave-labels {
+    display: flex;
+    width: 100%;
+    max-width: 1200px;
+    justify-content: space-around;
+    margin-bottom: 10px;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.piano {
+    display: flex;
+    position: relative;
+    background: linear-gradient(180deg, #2a2a3a, #1a1a2a);
+    padding: 20px 15px 15px;
+    border-radius: 10px;
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.5),
+        inset 0 2px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Piano Keys */
+.key {
+    position: relative;
+    cursor: pointer;
+    transition: all 0.08s ease-out;
+    user-select: none;
+}
+
+.key.white {
+    width: 50px;
+    height: 200px;
+    background: linear-gradient(180deg, #f8f8f8 0%, #fff 10%, #e8e8e8 100%);
+    border: 1px solid #ccc;
+    border-radius: 0 0 6px 6px;
+    margin: 0 1px;
+    z-index: 1;
+    box-shadow:
+        0 4px 8px rgba(0, 0, 0, 0.3),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.key.white:hover {
+    background: linear-gradient(180deg, #fff 0%, #fff 10%, #f0f0f0 100%);
+}
+
+.key.white.active {
+    background: linear-gradient(180deg, #e0e0e0 0%, #d8d8d8 100%);
+    transform: translateY(3px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.key.white.ai-active {
+    background: linear-gradient(180deg, #ffe0e5 0%, #ffd0d8 100%);
+    box-shadow:
+        0 4px 8px rgba(0, 0, 0, 0.3),
+        0 0 20px rgba(233, 69, 96, 0.4);
+}
+
+.key.black {
+    width: 34px;
+    height: 120px;
+    background: linear-gradient(180deg, #333 0%, #1a1a1a 100%);
+    border-radius: 0 0 4px 4px;
+    position: absolute;
+    z-index: 2;
+    box-shadow:
+        0 4px 10px rgba(0, 0, 0, 0.5),
+        inset 0 -4px 8px rgba(0, 0, 0, 0.4),
+        inset 0 2px 4px rgba(255, 255, 255, 0.1);
+}
+
+.key.black:hover {
+    background: linear-gradient(180deg, #444 0%, #2a2a2a 100%);
+}
+
+.key.black.active {
+    background: linear-gradient(180deg, #222 0%, #111 100%);
+    transform: translateY(2px);
+    height: 118px;
+    box-shadow:
+        0 2px 5px rgba(0, 0, 0, 0.4),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.key.black.ai-active {
+    background: linear-gradient(180deg, #5a2030 0%, #3a1520 100%);
+    box-shadow:
+        0 4px 10px rgba(0, 0, 0, 0.5),
+        0 0 15px rgba(233, 69, 96, 0.5);
+}
+
+/* Key Labels */
+.key-label {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: #999;
+    pointer-events: none;
+}
+
+.key.black .key-label {
+    color: #666;
+    bottom: 8px;
+    font-size: 0.6rem;
+}
+
+/* Keyboard Hints */
+.keyboard-hint {
+    text-align: center;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    margin-top: 20px;
+}
+
+.keyboard-hint h3 {
+    color: #888;
+    font-weight: 400;
+    margin-bottom: 15px;
+    font-size: 1rem;
+}
+
+.key-mappings {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mapping-row {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.white-keys {
+    color: #aaa;
+}
+
+.black-keys {
+    color: #777;
+}
+
+/* Duet Indicator */
+.duet-indicator {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: rgba(233, 69, 96, 0.9);
+    padding: 15px 25px;
+    border-radius: 30px;
+    box-shadow: 0 10px 40px rgba(233, 69, 96, 0.4);
+    transition: all 0.3s;
+}
+
+.duet-indicator.hidden {
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none;
+}
+
+.indicator-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+}
+
+.pulse {
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .key.white {
+        width: 40px;
+        height: 160px;
+    }
+
+    .key.black {
+        width: 28px;
+        height: 100px;
+    }
+}
+
+@media (max-width: 768px) {
+    .key.white {
+        width: 30px;
+        height: 130px;
+    }
+
+    .key.black {
+        width: 22px;
+        height: 80px;
+    }
+
+    .controls {
+        gap: 20px;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+}
