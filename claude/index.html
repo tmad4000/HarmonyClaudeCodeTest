@@ -396,6 +396,22 @@
         .speaker-mode-container .toggle.on {
             background: rgba(46, 204, 113, 0.6);
         }
+
+        .control-group.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .mode-category {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 15px 0 8px 0;
+        }
+
+        .mode-category:first-of-type {
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
@@ -486,15 +502,25 @@
         </div>
 
         <div class="controls">
-            <div class="control-group">
+            <div class="control-group full-width">
                 <h3>Harmony Mode</h3>
+                <p class="mode-category">Simple (2-voice)</p>
                 <div class="mode-buttons">
                     <button class="mode-btn" data-mode="unison">Unison</button>
                     <button class="mode-btn active" data-mode="thirds">Thirds</button>
                     <button class="mode-btn" data-mode="fifths">Fifths</button>
+                    <button class="mode-btn" data-mode="sixths">Sixths</button>
                     <button class="mode-btn" data-mode="octaves">Octaves</button>
-                    <button class="mode-btn" data-mode="choir">Full Choir</button>
+                    <button class="mode-btn" data-mode="power">Power</button>
+                </div>
+                <p class="mode-category">Choir (4-voice)</p>
+                <div class="mode-buttons">
+                    <button class="mode-btn" data-mode="choir">Classic Choir</button>
                     <button class="mode-btn" data-mode="barbershop">Barbershop</button>
+                    <button class="mode-btn" data-mode="gospel">Gospel</button>
+                    <button class="mode-btn" data-mode="jazz">Jazz</button>
+                    <button class="mode-btn" data-mode="ethereal">Ethereal</button>
+                    <button class="mode-btn" data-mode="close">Close Harmony</button>
                 </div>
             </div>
 
@@ -546,6 +572,17 @@
                         <span id="reverbValue">30%</span>
                     </label>
                     <input type="range" id="reverbAmount" min="0" max="100" value="30">
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Chorus</h3>
+                <div class="slider-container">
+                    <label>
+                        <span>Richness</span>
+                        <span id="chorusValue">30%</span>
+                    </label>
+                    <input type="range" id="chorusAmount" min="0" max="100" value="30">
                 </div>
             </div>
 

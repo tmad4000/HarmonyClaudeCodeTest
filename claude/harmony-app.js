@@ -12,6 +12,7 @@ class HarmonySinger {
         this.pitchShifters = {};
         this.gains = {};
         this.reverb = null;
+        this.chorus = null;
         this.masterGain = null;
         this.dryGain = null;
 
@@ -22,6 +23,7 @@ class HarmonySinger {
         this.harmonyVolume = 0.7;
         this.dryVolume = 0.8;
         this.reverbAmount = 0.3;
+        this.chorusAmount = 0.3;
         this.smoothing = 0.5;
         this.speakerMode = false; // Enable AEC for speaker use (no headphones)
         this.mediaStream = null; // Native MediaStream for AEC control
@@ -51,11 +53,16 @@ class HarmonySinger {
         };
 
         // Harmony intervals for different modes
+        // Simple two-voice modes (lower/upper)
         this.harmonyModes = {
             unison: { lower: 0, upper: 0 },       // Same tone (doubles your voice)
-            thirds: { lower: -4, upper: 3 },      // Minor 3rd down, Major 3rd up
+            thirds: { lower: -3, upper: 4 },      // Minor 3rd down, Major 3rd up
             fifths: { lower: -7, upper: 7 },      // Perfect 5th down/up
             octaves: { lower: -12, upper: 12 },   // Octave down/up
+            sixths: { lower: -9, upper: 9 },      // Major 6th (sweet interval)
+            power: { lower: -7, upper: 12 },      // Power chord (5th down, octave up) - rock!
+
+            // Four-voice choir modes
             choir: {
                 soprano: 12,   // Octave up
                 alto: 4,       // Major 3rd up
@@ -67,6 +74,30 @@ class HarmonySinger {
                 alto: 4,       // Major 3rd up
                 tenor: -5,     // Perfect 4th down
                 bass: -12      // Octave down
+            },
+            gospel: {
+                soprano: 7,    // Perfect 5th up
+                alto: 3,       // Minor 3rd up (soulful)
+                tenor: -4,     // Major 3rd down
+                bass: -7       // Perfect 5th down
+            },
+            jazz: {
+                soprano: 11,   // Major 7th up (jazzy!)
+                alto: 4,       // Major 3rd up
+                tenor: -2,     // Major 2nd down (tension)
+                bass: -10      // Minor 7th down
+            },
+            ethereal: {
+                soprano: 7,    // Perfect 5th up
+                alto: 12,      // Octave up
+                tenor: -5,     // Perfect 4th down
+                bass: -12      // Octave down
+            },
+            close: {
+                soprano: 4,    // Major 3rd up
+                alto: 2,       // Major 2nd up (very close)
+                tenor: -1,     // Minor 2nd down (cluster)
+                bass: -3       // Minor 3rd down
             }
         };
 
@@ -108,6 +139,14 @@ class HarmonySinger {
             document.getElementById('reverbValue').textContent = `${e.target.value}%`;
             if (this.reverb) {
                 this.reverb.wet.value = this.reverbAmount;
+            }
+        });
+
+        document.getElementById('chorusAmount').addEventListener('input', (e) => {
+            this.chorusAmount = e.target.value / 100;
+            document.getElementById('chorusValue').textContent = `${e.target.value}%`;
+            if (this.chorus) {
+                this.chorus.wet.value = this.chorusAmount;
             }
         });
 
@@ -228,6 +267,15 @@ class HarmonySinger {
             // Create analyser for pitch detection
             this.analyser = new Tone.Analyser('waveform', 2048);
 
+            // Create chorus for richer, more human sound
+            this.chorus = new Tone.Chorus({
+                frequency: 1.5,      // Slow modulation for natural sound
+                delayTime: 3.5,      // ms
+                depth: 0.7,
+                wet: this.chorusAmount
+            });
+            this.chorus.start();
+
             // Create reverb
             this.reverb = new Tone.Reverb({
                 decay: 2.5,
@@ -246,13 +294,15 @@ class HarmonySinger {
             this.createPitchShifters();
 
             // Connect the audio graph
+            // Signal flow: mic -> dryGain -> chorus -> reverb -> masterGain -> output
             this.mic.connect(this.analyser);
             this.mic.connect(this.dryGain);
-            this.dryGain.connect(this.reverb);
+            this.dryGain.connect(this.chorus);
+            this.chorus.connect(this.reverb);
             this.reverb.connect(this.masterGain);
             this.masterGain.toDestination();
 
-            // Connect pitch shifters
+            // Connect pitch shifters (harmonies go through chorus too for richness)
             this.connectPitchShifters();
 
             // Use AnalyserNode for pitch detection
@@ -284,8 +334,10 @@ class HarmonySinger {
         this.pitchShifters = {};
         this.gains = {};
 
-        if (this.currentMode === 'choir' || this.currentMode === 'barbershop') {
-            // Create SATB voices
+        const fourVoiceModes = ['choir', 'barbershop', 'gospel', 'jazz', 'ethereal', 'close'];
+
+        if (fourVoiceModes.includes(this.currentMode)) {
+            // Create SATB voices for 4-voice modes
             ['soprano', 'alto', 'tenor', 'bass'].forEach(voice => {
                 this.pitchShifters[voice] = new Tone.PitchShift({
                     pitch: this.harmonyModes[this.currentMode][voice],
@@ -319,7 +371,8 @@ class HarmonySinger {
         Object.keys(this.pitchShifters).forEach(key => {
             this.mic.connect(this.pitchShifters[key]);
             this.pitchShifters[key].connect(this.gains[key]);
-            this.gains[key].connect(this.reverb);
+            // Route harmonies through chorus for richer sound
+            this.gains[key].connect(this.chorus);
         });
     }
 
@@ -328,10 +381,12 @@ class HarmonySinger {
             this.dryGain.gain.value = this.dryVolume;
         }
 
+        const fourVoiceModes = ['choir', 'barbershop', 'gospel', 'jazz', 'ethereal', 'close'];
+
         Object.keys(this.gains).forEach(key => {
             if (this.gains[key]) {
-                if (this.currentMode === 'choir' || this.currentMode === 'barbershop') {
-                    // For choir modes, check individual voice toggles
+                if (fourVoiceModes.includes(this.currentMode)) {
+                    // For 4-voice modes, check individual voice toggles
                     this.gains[key].gain.value = this.choirVoices[key] ? this.harmonyVolume * 0.5 : 0;
                 } else {
                     // For simple modes, check harmony position
@@ -376,6 +431,7 @@ class HarmonySinger {
         Object.values(this.pitchShifters).forEach(ps => ps.dispose());
         Object.values(this.gains).forEach(g => g.dispose());
 
+        if (this.chorus) this.chorus.dispose();
         if (this.reverb) this.reverb.dispose();
         if (this.masterGain) this.masterGain.dispose();
         if (this.dryGain) this.dryGain.dispose();
@@ -392,11 +448,12 @@ class HarmonySinger {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
 
-        // Show/hide choir layout
+        // Show/hide choir layout - check if it's a 4-voice mode
         const simpleHarmony = document.getElementById('simpleHarmony');
         const choirLayout = document.getElementById('choirLayout');
+        const fourVoiceModes = ['choir', 'barbershop', 'gospel', 'jazz', 'ethereal', 'close'];
 
-        if (mode === 'choir' || mode === 'barbershop') {
+        if (fourVoiceModes.includes(mode)) {
             simpleHarmony.style.display = 'none';
             choirLayout.classList.add('visible');
         } else {
