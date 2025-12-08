@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Harmony Singer - Your AI Backup Singer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .pitch-display {
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .current-note {
+            font-size: 5rem;
+            font-weight: bold;
+            color: #e94560;
+            text-shadow: 0 0 30px rgba(233, 69, 96, 0.5);
+        }
+
+        .frequency {
+            font-size: 1.2rem;
+            color: #888;
+            margin-top: 10px;
+        }
+
+        .clarity-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .clarity-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            border-radius: 4px;
+            transition: width 0.1s ease;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .control-row label {
+            min-width: 120px;
+            color: #aaa;
+        }
+
+        .control-row input[type="range"] {
+            flex: 1;
+            height: 6px;
+            -webkit-appearance: none;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .control-row input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #e94560;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .control-row .value {
+            min-width: 50px;
+            text-align: right;
+            color: #e94560;
+            font-weight: bold;
+        }
+
+        .harmony-mode {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .mode-btn {
+            padding: 12px 24px;
+            border: 2px solid rgba(233, 69, 96, 0.3);
+            background: transparent;
+            color: #fff;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .mode-btn:hover {
+            border-color: #e94560;
+            background: rgba(233, 69, 96, 0.1);
+        }
+
+        .mode-btn.active {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        .start-btn {
+            width: 100%;
+            padding: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .start-btn.stopped {
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            color: #fff;
+        }
+
+        .start-btn.running {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            color: #fff;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(233, 69, 96, 0.3);
+        }
+
+        .harmony-voices {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .voice-indicator {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .voice-indicator.active {
+            border-color: #e94560;
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.2);
+        }
+
+        .voice-name {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .voice-note {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #e94560;
+        }
+
+        .visualizer {
+            width: 100%;
+            height: 100px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .status.error {
+            color: #e94560;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-row input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            accent-color: #e94560;
+        }
+
+        h3 {
+            color: #fff;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .section-divider {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 20px 0;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Harmony Singer</h1>
+        <p class="subtitle">Your AI Backup Singer & Choir</p>
+
+        <div class="card">
+            <div class="pitch-display">
+                <div class="current-note" id="currentNote">--</div>
+                <div class="frequency" id="frequency">Waiting for input...</div>
+                <div class="clarity-bar">
+                    <div class="clarity-fill" id="clarityFill" style="width: 0%"></div>
+                </div>
+            </div>
+            <canvas class="visualizer" id="visualizer"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Harmony Mode</h3>
+            <div class="harmony-mode">
+                <button class="mode-btn active" data-mode="duet">Duet (3rd)</button>
+                <button class="mode-btn" data-mode="trio">Trio (3rd + 5th)</button>
+                <button class="mode-btn" data-mode="choir">Choir (Full)</button>
+                <button class="mode-btn" data-mode="octave">Octave Double</button>
+            </div>
+
+            <div class="harmony-voices" id="harmonyVoices">
+                <div class="voice-indicator" id="voice1">
+                    <div class="voice-name">Harmony 1 (3rd)</div>
+                    <div class="voice-note">--</div>
+                </div>
+                <div class="voice-indicator" id="voice2" style="display: none;">
+                    <div class="voice-name">Harmony 2 (5th)</div>
+                    <div class="voice-note">--</div>
+                </div>
+                <div class="voice-indicator" id="voice3" style="display: none;">
+                    <div class="voice-name">Harmony 3 (Octave)</div>
+                    <div class="voice-note">--</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card controls">
+            <h3>Settings</h3>
+
+            <div class="control-row">
+                <label>Harmony Volume</label>
+                <input type="range" id="harmonyVolume" min="0" max="100" value="70">
+                <span class="value" id="harmonyVolumeVal">70%</span>
+            </div>
+
+            <div class="control-row">
+                <label>Dry/Wet Mix</label>
+                <input type="range" id="wetMix" min="0" max="100" value="50">
+                <span class="value" id="wetMixVal">50%</span>
+            </div>
+
+            <div class="control-row">
+                <label>Reverb</label>
+                <input type="range" id="reverb" min="0" max="100" value="30">
+                <span class="value" id="reverbVal">30%</span>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <div class="control-row">
+                <label>Detection Sensitivity</label>
+                <input type="range" id="sensitivity" min="0" max="100" value="50">
+                <span class="value" id="sensitivityVal">50%</span>
+            </div>
+
+            <div class="checkbox-row">
+                <input type="checkbox" id="passthrough" checked>
+                <label for="passthrough">Pass through original voice</label>
+            </div>
+
+            <div class="checkbox-row">
+                <input type="checkbox" id="useSynth">
+                <label for="useSynth">Use synth voices (vs pitch-shifted)</label>
+            </div>
+        </div>
+
+        <button class="start-btn stopped" id="startBtn">Start Singing</button>
+        <div class="status" id="status">Click Start to begin</div>
+    </div>
+
+    <script src="https://unpkg.com/tone@14"></script>
+    <script src="app.js"></script>
+</body>
+</html>
