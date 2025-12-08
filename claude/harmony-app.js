@@ -26,7 +26,7 @@ class HarmonySinger {
 
         // Pitch detection
         this.audioContext = null;
-        this.pitchBuffer = new Float32Array(2048);
+        this.pitchAnalyser = null;
         this.lastPitch = null;
         this.smoothedPitch = null;
 
@@ -181,20 +181,14 @@ class HarmonySinger {
             // Get the underlying audio context for pitch detection
             this.audioContext = Tone.getContext().rawContext;
 
-            // Create a ScriptProcessor for pitch detection (deprecated but works)
-            this.scriptProcessor = this.audioContext.createScriptProcessor(2048, 1, 1);
+            // Use AnalyserNode for pitch detection
+            this.pitchAnalyser = this.audioContext.createAnalyser();
+            this.pitchAnalyser.fftSize = 2048;
 
-            // Connect mic to script processor through Tone's context
-            const micNode = this.mic._mediaStream;
-            if (micNode) {
-                const source = this.audioContext.createMediaStreamSource(micNode);
-                source.connect(this.scriptProcessor);
-                this.scriptProcessor.connect(this.audioContext.destination);
-                this.scriptProcessor.onaudioprocess = (e) => {
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    this.pitchBuffer.set(inputData);
-                };
-            }
+            // Wrap our native analyser as a Tone node so we can connect to it
+            const analyserWrapper = Tone.getContext().createGain();
+            analyserWrapper.connect(this.pitchAnalyser);
+            this.mic.connect(analyserWrapper);
 
             this.isRunning = true;
             this.updateUI();
@@ -278,8 +272,9 @@ class HarmonySinger {
             this.mic.close();
         }
 
-        if (this.scriptProcessor) {
-            this.scriptProcessor.disconnect();
+        if (this.pitchAnalyser) {
+            this.pitchAnalyser.disconnect();
+            this.pitchAnalyser = null;
         }
 
         Object.values(this.pitchShifters).forEach(ps => ps.dispose());
@@ -356,10 +351,23 @@ class HarmonySinger {
     }
 
     startPitchDetection() {
+        // Create buffer for time-domain data
+        const bufferLength = this.pitchAnalyser ? this.pitchAnalyser.fftSize : 2048;
+        const timeDataBuffer = new Float32Array(bufferLength);
+
         const detect = () => {
             if (!this.isRunning) return;
 
-            const pitch = this.detectPitch(this.pitchBuffer, this.audioContext.sampleRate);
+            // Get time-domain data from analyser
+            if (this.pitchAnalyser) {
+                this.pitchAnalyser.getFloatTimeDomainData(timeDataBuffer);
+            } else {
+                // Fallback: use Tone's analyser
+                const waveform = this.analyser.getValue();
+                timeDataBuffer.set(waveform);
+            }
+
+            const pitch = this.detectPitch(timeDataBuffer, this.audioContext.sampleRate);
 
             if (pitch && pitch > 60 && pitch < 2000) {
                 // Apply smoothing
