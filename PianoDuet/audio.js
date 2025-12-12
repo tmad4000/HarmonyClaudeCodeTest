@@ -6,6 +6,33 @@ class PianoAudio {
         this.volume = 0.7;
         this.activeNotes = new Map();
         this.initialized = false;
+        this.tuningSystem = 'equal'; // 'equal' or 'just'
+        this.rootKey = 'C'; // The key for just intonation
+
+        // Just intonation ratios relative to the root (tonic)
+        // These are the pure intervals based on harmonic series
+        this.justRatios = {
+            0: 1,        // Unison (1:1)
+            1: 16/15,    // Minor second (16:15)
+            2: 9/8,      // Major second (9:8)
+            3: 6/5,      // Minor third (6:5)
+            4: 5/4,      // Major third (5:4)
+            5: 4/3,      // Perfect fourth (4:3)
+            6: 45/32,    // Tritone (45:32)
+            7: 3/2,      // Perfect fifth (3:2)
+            8: 8/5,      // Minor sixth (8:5)
+            9: 5/3,      // Major sixth (5:3)
+            10: 9/5,     // Minor seventh (9:5)
+            11: 15/8     // Major seventh (15:8)
+        };
+    }
+
+    setTuning(tuning) {
+        this.tuningSystem = tuning;
+    }
+
+    setKey(key) {
+        this.rootKey = key;
     }
 
     async init() {
@@ -42,9 +69,41 @@ class PianoAudio {
         const octave = parseInt(note.slice(-1));
         const semitone = notes.indexOf(noteName);
 
-        // A4 = 440Hz, which is 9 semitones from C4
+        if (this.tuningSystem === 'just') {
+            return this.noteToFrequencyJust(noteName, octave, semitone, notes);
+        }
+
+        // Equal temperament: A4 = 440Hz, which is 9 semitones from C4
         const semitonesFromA4 = (octave - 4) * 12 + semitone - 9;
         return 440 * Math.pow(2, semitonesFromA4 / 12);
+    }
+
+    // Calculate frequency using just intonation relative to the selected key
+    noteToFrequencyJust(noteName, octave, semitone, notes) {
+        const rootSemitone = notes.indexOf(this.rootKey);
+
+        // Calculate the root frequency in the given octave using equal temperament
+        // We use A4 = 440Hz as our reference
+        const rootOctave = octave;
+        const rootSemitonesFromA4 = (rootOctave - 4) * 12 + rootSemitone - 9;
+        const rootFreq = 440 * Math.pow(2, rootSemitonesFromA4 / 12);
+
+        // Calculate interval from root (in semitones, wrapping within octave)
+        let intervalFromRoot = semitone - rootSemitone;
+        let octaveAdjustment = 0;
+
+        if (intervalFromRoot < 0) {
+            intervalFromRoot += 12;
+            octaveAdjustment = -1;
+        }
+
+        // Get the just intonation ratio for this interval
+        const ratio = this.justRatios[intervalFromRoot];
+
+        // Calculate frequency: root * ratio * octave adjustment
+        const freq = rootFreq * ratio * Math.pow(2, octaveAdjustment);
+
+        return freq;
     }
 
     // Create a rich piano-like sound

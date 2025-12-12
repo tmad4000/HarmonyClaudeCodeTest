@@ -168,6 +168,18 @@ class Piano {
         styleSelect.addEventListener('change', (e) => {
             this.accompaniment.setStyle(e.target.value);
         });
+
+        // Tuning selector
+        const tuningSelect = document.getElementById('tuning');
+        tuningSelect.addEventListener('change', (e) => {
+            this.audio.setTuning(e.target.value);
+        });
+
+        // Key selector
+        const keySelect = document.getElementById('key');
+        keySelect.addEventListener('change', (e) => {
+            this.audio.setKey(e.target.value);
+        });
     }
 
     playNote(note) {
