@@ -113,6 +113,68 @@ select option {
     color: #fff;
 }
 
+/* Tuning Control */
+.tuning-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tuning-label {
+    font-size: 0.85rem;
+    color: #888;
+    min-width: 45px;
+}
+
+.just-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.toggle-track {
+    display: block;
+    width: 36px;
+    height: 20px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #888;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.just-toggle.active .toggle-track {
+    background: rgba(233, 69, 96, 0.4);
+}
+
+.just-toggle.active .toggle-thumb {
+    left: 18px;
+    background: #e94560;
+    box-shadow: 0 0 8px rgba(233, 69, 96, 0.6);
+}
+
+.key-select {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    min-width: auto;
+    width: 55px;
+}
+
+.key-select.hidden {
+    display: none;
+}
+
 /* Duet Button */
 .duet-btn {
     display: flex;

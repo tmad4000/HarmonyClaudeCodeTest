@@ -2,7 +2,7 @@ import time
 import sys
 import numpy as np
 import sounddevice as sd
-from pedalboard import Pedalboard, PitchShift, Reverb, Chorus, Gain, HighpassFilter, Compressor
+from pedalboard import Pedalboard, PitchShift, Reverb, Chorus, Gain, HighpassFilter, Compressor, NoiseGate
 from rich.live import Live
 from rich.panel import Panel
 from rich.layout import Layout
@@ -21,14 +21,17 @@ class HarmonyEngine:
     def __init__(self):
         self.running = True
         self.active = False
+        self.laptop_mode = False
         self.current_preset_index = 0
         self.input_level = 0.0
         self.output_level = 0.0
         
         # Dry signal processing (Compressor to even out levels)
         self.dry_board = Pedalboard([
+            NoiseGate(threshold_db=-100, ratio=10, attack_ms=1.0, release_ms=100.0), # Gate
             HighpassFilter(cutoff_frequency_hz=80), # Remove rumble
-            Compressor(threshold_db=-20, ratio=2.5)
+            Compressor(threshold_db=-20, ratio=2.5),
+            Gain(gain_db=0)
         ])
         
         # Harmony Voices (Persistent boards to keep state)
@@ -116,6 +119,19 @@ class HarmonyEngine:
     def toggle_active(self):
         self.active = not self.active
 
+    def toggle_laptop_mode(self):
+        self.laptop_mode = not self.laptop_mode
+        if self.laptop_mode:
+            # FEEDBACK KILLER ON
+            self.dry_board[0].threshold_db = -35.0 # Noise Gate Aggressive
+            self.dry_board[1].cutoff_frequency_hz = 200.0 # High pass aggressive
+            self.dry_board[3].gain_db = -4.0 # Lower Gain
+        else:
+            # STUDIO MODE
+            self.dry_board[0].threshold_db = -100.0 # Noise Gate OFF
+            self.dry_board[1].cutoff_frequency_hz = 80.0
+            self.dry_board[3].gain_db = 0.0
+
     def next_preset(self):
         self.current_preset_index = (self.current_preset_index + 1) % len(self.presets)
 
@@ -137,6 +153,8 @@ def run_app():
                 engine.next_preset()
             elif key == keyboard.Key.left:
                 engine.prev_preset()
+            elif hasattr(key, 'char') and key.char == 'l':
+                engine.toggle_laptop_mode()
             elif key == keyboard.Key.esc:
                 engine.running = False
                 return False # Stop listener
@@ -166,6 +184,10 @@ def run_app():
                     status_color = "green" if engine.active else "dim white"
                     status_text = "ON AIR" if engine.active else "BYPASS"
                     
+                    # Laptop Mode Status
+                    laptop_status = "ACTIVE" if engine.laptop_mode else "OFF"
+                    laptop_color = "yellow" if engine.laptop_mode else "dim"
+
                     # Level Meters
                     in_meter_chars = "█" * int(engine.input_level * 50)
                     out_meter_chars = "█" * int(engine.output_level * 50)
@@ -174,6 +196,7 @@ def run_app():
                     
                     panel_content = f"""
 [bold {status_color}]STATUS: {status_text}[/]
+[bold {laptop_color}]Laptop Mode:[/] {laptop_status}
 
 [bold cyan]Preset:[/] {preset_name}
 
@@ -182,6 +205,7 @@ def run_app():
 
 [dim]Controls:[/dim]
 [Space] Toggle Harmony
+[L]     Toggle Laptop Mode (Anti-Feedback)
 [←/→]   Change Preset
 [Esc]   Quit
 """

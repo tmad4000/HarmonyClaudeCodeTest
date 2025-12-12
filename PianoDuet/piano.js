@@ -169,14 +169,19 @@ class Piano {
             this.accompaniment.setStyle(e.target.value);
         });
 
-        // Tuning selector
-        const tuningSelect = document.getElementById('tuning');
-        tuningSelect.addEventListener('change', (e) => {
-            this.audio.setTuning(e.target.value);
+        // Just intonation toggle
+        const justToggle = document.getElementById('just-toggle');
+        const tuningLabel = document.getElementById('tuning-label');
+        const keySelect = document.getElementById('key');
+
+        justToggle.addEventListener('click', () => {
+            const isJust = justToggle.classList.toggle('active');
+            this.audio.setTuning(isJust ? 'just' : 'equal');
+            tuningLabel.textContent = isJust ? 'Just' : '12-TET';
+            keySelect.classList.toggle('hidden', !isJust);
         });
 
         // Key selector
-        const keySelect = document.getElementById('key');
         keySelect.addEventListener('change', (e) => {
             this.audio.setKey(e.target.value);
         });
