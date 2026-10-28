@@ -437,7 +437,8 @@
                 <span class="speaker-mode-label">Using Speakers</span>
             </div>
             <div id="speakerModeStatus" class="speaker-mode-status">Headphone Mode</div>
-            <p class="speaker-mode-hint">Enable Speaker Mode if not using headphones (uses echo cancellation)</p>
+            <div id="guardStatus" class="speaker-mode-status"></div>
+            <p class="speaker-mode-hint">Laptop open, no headphones? Switch to Speakers: echo cancellation, your own voice is not played back, harmonies only sound while you sing, and a feedback guard notches out any howl it hears building up.</p>
         </div>
 
         <div class="main-display">
@@ -572,6 +573,24 @@
             </div>
 
             <div class="control-group">
+                <h3>Record &amp; Debug</h3>
+                <div class="select-row">
+                    <label for="recordMode">Capture</label>
+                    <select id="recordMode">
+                        <option value="both">Input (L) + Output (R)</option>
+                        <option value="output">Output only</option>
+                        <option value="input">Input only</option>
+                    </select>
+                </div>
+                <div class="mode-buttons" style="margin-top:10px">
+                    <button class="mode-btn" id="recordBtn">● Record</button>
+                    <button class="mode-btn" id="logBtn">Save debug log</button>
+                </div>
+                <div id="recordStatus" class="key-status"></div>
+                <p class="mode-category">Recordings download as .webm when stopped. The log is JSON: notes, shifts, key, gate, notches and 2 Hz input stats.</p>
+            </div>
+
+            <div class="control-group">
                 <h3>Harmony Volume</h3>
                 <div class="slider-container">
                     <label>
@@ -584,6 +603,7 @@
 
             <div class="control-group">
                 <h3>Your Voice Mix</h3>
+                <p class="mode-category" id="dryNote"></p>
                 <div class="slider-container">
                     <label>
                         <span>Dry Signal</span>

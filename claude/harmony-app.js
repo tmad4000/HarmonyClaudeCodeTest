@@ -1,16 +1,19 @@
 /**
  * Harmony Singer - Real-time AI Backup Vocalist
  *
- * Audio: Tone.js (granular PitchShift) or Signalsmith Stretch (formant-preserving WASM worklet)
- * Pitch: YIN detector on the mic signal
- * Harmony: key-aware. The detected note is mapped onto the selected scale and each
- *          harmony voice is shifted by a *scale-degree* interval, so a "third" is a
- *          major or minor third depending on where you are in the key (like a real
- *          backup singer). Chromatic scale falls back to fixed semitone intervals.
+ * Audio:   Signalsmith Stretch (formant-preserving WASM worklet, default) or Tone.js granular PitchShift
+ * Pitch:   YIN detector on the (guarded) mic signal
+ * Harmony: key-aware. The detected note is mapped onto the selected scale and each harmony voice
+ *          is shifted by a *scale-degree* interval, so a "third" is major or minor depending on
+ *          where you are in the key (like a real backup singer). Chromatic = fixed semitones.
+ * Speaker mode (laptop open, no headphones): browser echo cancellation + dry monitor muted +
+ *          harmony gate (only sings while you sing) + high/low-pass + limiter + an automatic
+ *          feedback guard that spots howling spectral lines and drops notch filters on them.
+ * Debug:   optional audio recording (output, or input/output as L/R) and a JSON event log.
  *
- * Agent-testable: open with ?input=tone&freq=220&autostart=1 to replace the microphone
- * with a synthetic sawtooth, then call window.harmonySinger.measureVoices() to read the
- * pitch of every harmony voice at its output. See test/verify_harmony.py.
+ * Agent-testable: ?input=tone&freq=220&autostart=1 replaces the microphone with a synthetic
+ * sawtooth; ?howl=3000 adds a rising pure tone to provoke the feedback guard; then call
+ * window.harmonySinger.measureVoices() / measureGuard(hz) / getLog(). See test/verify_harmony.py.
  */
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -60,6 +63,22 @@ const SATB = ['soprano', 'alto', 'tenor', 'bass'];
 // Krumhansl-Kessler key profiles for automatic key detection.
 const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+// Feedback guard tuning
+const GUARD = {
+    maxNotches: 8,
+    notchQ: 25,
+    minHz: 150,
+    maxHz: 8000,
+    peakPapr: 12,          // dB above the surrounding spectrum to count as a "line"
+    minLevelDb: -45,       // ignore quiet lines
+    confirmFrames: 5,      // ~0.5 s persistent ...
+    riseDb: 3,             // ... and rising by this much, or
+    sustainFrames: 12,     // ... persistent for ~1.2 s
+    releaseMs: 20000,      // let a notch go after this long without re-detection
+    duckMs: 2000,          // duck harmonies briefly when a howl is caught
+    analyseEveryFrames: 6  // ~100 ms at 60 fps
+};
 
 // ---------- Pure music-theory helpers (exposed on window.HarmonyTheory for tests) ----------
 
@@ -169,6 +188,30 @@ function yinPitch(buffer, sampleRate, threshold = 0.2) {
     return sampleRate / better;
 }
 
+/** Find spectral lines: local maxima that stand well above their neighbourhood. */
+function findSpectralPeaks(spec, binHz, minHz, maxHz, minPapr, minDb) {
+    const lo = Math.max(1, Math.floor(minHz / binHz));
+    const hi = Math.min(spec.length - 2, Math.floor(maxHz / binHz));
+    const peaks = [];
+    for (let i = lo; i <= hi; i++) {
+        const v = spec[i];
+        if (v < minDb || !(v >= spec[i - 1] && v > spec[i + 1])) continue;
+        let sum = 0, c = 0;
+        for (let j = i - 40; j <= i + 40; j++) {
+            if (j < 1 || j >= spec.length || Math.abs(j - i) <= 3) continue;
+            sum += spec[j]; c++;
+        }
+        const papr = v - sum / Math.max(1, c);
+        if (papr < minPapr) continue;
+        const a = spec[i - 1], b = v, cc = spec[i + 1];
+        const denom = a - 2 * b + cc;
+        const frac = denom !== 0 ? 0.5 * (a - cc) / denom : 0;
+        peaks.push({ bin: i, hz: (i + frac) * binHz, db: v, papr });
+    }
+    peaks.sort((p, q) => q.db - p.db);
+    return peaks.slice(0, 12);
+}
+
 // ---------- The app ----------
 
 class HarmonySinger {
@@ -176,26 +219,33 @@ class HarmonySinger {
         this.params = new URLSearchParams(window.location.search);
 
         // Audio nodes
-        this.mic = null;            // Tone.Gain wrapping the input
-        this.micSource = null;      // native source node (mic or test oscillator)
+        this.mic = null;            // Tone.Gain: the guarded input every voice and the monitor read from
+        this.micSource = null;      // native/standardized source node (mic or test oscillator)
         this.mediaStream = null;
         this.testOsc = null;
+        this.howlOsc = null;
         this.analyser = null;       // Tone waveform analyser (visualizer)
-        this.pitchAnalyser = null;  // native analyser for YIN
-        this.pitchShifters = {};    // voice -> shifter node (Tone.PitchShift or Stretch AudioNode)
-        this.gains = {};            // voice -> Tone.Gain
-        this.voiceAnalysers = {};   // voice -> native AnalyserNode tapping the shifter output
-        this.voiceShifts = {};      // voice -> current semitone shift
-        this.voiceTargets = {};     // voice -> current target midi (for display)
+        this.pitchAnalyser = null;  // analyser on the guarded input for YIN
+        this.guardAnalyser = null;  // analyser on the raw input for howl detection
+        this.postGuardAnalyser = null;
+        this.hpFilter = null;
+        this.notchNodes = [];       // BiquadFilter notch bank (speaker mode)
+        this.notches = [];          // [{hz, lastSeen, active}] parallel to notchNodes
+        this.pitchShifters = {};
+        this.gains = {};
+        this.voiceAnalysers = {};
+        this.voiceShifts = {};
+        this.voiceTargets = {};
+        this.gateGain = null;
+        this.lpFilter = null;
         this.reverb = null;
         this.chorus = null;
         this.masterGain = null;
+        this.limiter = null;
         this.dryGain = null;
 
         // State
         this.isRunning = false;
-        // Signalsmith Stretch is the default: it keeps formants and (measured) stays within
-        // ~4 cents of the target, where Tone.PitchShift lands ~30 cents flat on downward shifts.
         const requested = this.params.get('engine');
         const stretchAvailable = typeof SignalsmithStretch === 'function';
         this.engine = requested === 'granular' ? 'granular'
@@ -203,14 +253,14 @@ class HarmonySinger {
             : (stretchAvailable ? 'stretch' : 'granular');
         this.currentMode = this.params.get('mode') || 'thirds';
         this.currentScale = this.params.get('scale') || 'major';
-        this.keyRoot = this.params.get('key') || 'auto';   // 'auto' or note name
-        this.detectedKey = null;                            // {root, type, score}
+        this.keyRoot = this.params.get('key') || 'auto';
+        this.detectedKey = null;
         this.harmonyVolume = 0.7;
         this.dryVolume = 0.8;
         this.reverbAmount = 0.3;
         this.chorusAmount = 0.3;
         this.smoothing = 0.5;
-        this.speakerMode = false;
+        this.speakerMode = this.params.get('speaker') === '1';
         this.harmonyPosition = 'both';
         this.choirVoices = { soprano: true, alto: true, tenor: true, bass: true };
 
@@ -218,17 +268,151 @@ class HarmonySinger {
         this.audioContext = null;
         this.lastPitch = null;
         this.smoothedPitch = null;
-        this.stableMidi = null;      // quantized input note currently driving the harmony
+        this.stableMidi = null;
         this.candidateMidi = null;
         this.candidateFrames = 0;
         this.pitchClassHist = new Float32Array(12);
         this.lastKeyScan = 0;
+
+        // Guard / gate state
+        this.frameCounter = 0;
+        this.lastPeaks = [];
+        this.harmonicVoice = false;  // input looks like a voice (f0 with harmonics), not a pure line
+        this.guardCandidates = [];   // [{hz, frames, firstDb, lastDb, lastSeen}]
+        this.gateOpen = true;
+        this.lastVoicedAt = 0;
+        this.duckUntil = 0;
+        this.guardEvents = 0;
+        this.lastInputRms = 0;
+
+        // Debug log + recording
+        this.log = [];
+        this.logLimit = 20000;
+        this.verboseLog = this.params.get('log') === '1';
+        this.lastStatLog = 0;
+        this.recorder = null;
+        this.recordChunks = [];
+        this.recordStream = null;
+        this.recordNodes = [];
+        this.recordMode = this.params.get('recordmode') || 'both';  // 'output' | 'input' | 'both' (L=input, R=output)
+        this.lastRecordingUrl = null;
 
         this.noteStrings = NOTE_NAMES;
         this.initUI();
 
         if (this.params.get('autostart') === '1') {
             setTimeout(() => this.start(), 50);
+        }
+    }
+
+    // ---------- Logging ----------
+
+    logEvent(type, data) {
+        const entry = { t: Math.round(performance.now()), type, ...(data || {}) };
+        this.log.push(entry);
+        if (this.log.length > this.logLimit) this.log.splice(0, this.log.length - this.logLimit);
+        if (this.verboseLog) console.log('[harmony]', type, data || '');
+        return entry;
+    }
+
+    getLog() { return this.log; }
+
+    downloadLog() {
+        const blob = new Blob([JSON.stringify({
+            exportedAt: new Date().toISOString(),
+            userAgent: navigator.userAgent,
+            settings: this.snapshotSettings(),
+            events: this.log
+        }, null, 1)], { type: 'application/json' });
+        this.triggerDownload(blob, `harmony-log-${this.stamp()}.json`);
+    }
+
+    snapshotSettings() {
+        return {
+            engine: this.engine, mode: this.currentMode, scale: this.currentScale, keyRoot: this.keyRoot,
+            detectedKey: this.detectedKey, speakerMode: this.speakerMode, harmonyVolume: this.harmonyVolume,
+            dryVolume: this.dryVolume, reverbAmount: this.reverbAmount, chorusAmount: this.chorusAmount,
+            smoothing: this.smoothing, harmonyPosition: this.harmonyPosition, choirVoices: { ...this.choirVoices },
+            sampleRate: this.audioContext ? this.audioContext.sampleRate : null,
+            notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz))
+        };
+    }
+
+    stamp() {
+        return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    }
+
+    triggerDownload(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
+
+    // ---------- Recording ----------
+
+    isRecording() { return !!(this.recorder && this.recorder.state === 'recording'); }
+
+    startRecording(mode) {
+        if (!this.isRunning) throw new Error('Start the harmonizer before recording');
+        if (this.isRecording()) return;
+        if (mode) this.recordMode = mode;
+        const ctx = this.audioContext;
+        const dest = ctx.createMediaStreamDestination();
+        this.recordNodes = [dest];
+        if (this.recordMode === 'both') {
+            // Left = guarded input (what the engine hears), Right = what goes to the speakers.
+            const merger = ctx.createChannelMerger(2);
+            const inMono = ctx.createGain();
+            const outMono = ctx.createGain();
+            this.mic.connect(inMono);
+            Tone.connect(this.limiter, outMono);
+            inMono.connect(merger, 0, 0);
+            outMono.connect(merger, 0, 1);
+            merger.connect(dest);
+            this.recordNodes.push(merger, inMono, outMono);
+        } else if (this.recordMode === 'input') {
+            this.mic.connect(dest);
+        } else {
+            Tone.connect(this.limiter, dest);
+        }
+        const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+        this.recorder = new MediaRecorder(dest.stream, mime ? { mimeType: mime, audioBitsPerSecond: 192000 } : undefined);
+        this.recordChunks = [];
+        this.recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) this.recordChunks.push(e.data); };
+        this.recorder.onstop = () => {
+            const blob = new Blob(this.recordChunks, { type: this.recorder.mimeType || 'audio/webm' });
+            this.lastRecordingBlob = blob;
+            this.logEvent('recording-stopped', { bytes: blob.size, mode: this.recordMode });
+            if (blob.size > 0 && !this.params.get('nodownload')) {
+                this.triggerDownload(blob, `harmony-${this.recordMode}-${this.stamp()}.webm`);
+            }
+            this.recordNodes.forEach(n => { try { n.disconnect(); } catch (e) { /* ignore */ } });
+            this.recordNodes = [];
+            this.renderRecording();
+        };
+        this.recorder.start(1000);
+        this.logEvent('recording-started', { mode: this.recordMode, mime });
+        this.renderRecording();
+    }
+
+    stopRecording() {
+        if (!this.isRecording()) return;
+        this.recorder.stop();
+    }
+
+    renderRecording() {
+        const btn = document.getElementById('recordBtn');
+        const st = document.getElementById('recordStatus');
+        if (btn) {
+            btn.textContent = this.isRecording() ? '■ Stop recording' : '● Record';
+            btn.classList.toggle('active', this.isRecording());
+        }
+        if (st) {
+            st.textContent = this.isRecording()
+                ? `Recording ${this.recordMode === 'both' ? 'input (L) + output (R)' : this.recordMode}…`
+                : (this.lastRecordingBlob ? `Last recording: ${(this.lastRecordingBlob.size / 1024).toFixed(0)} KB (downloaded)` : '');
         }
     }
 
@@ -257,6 +441,23 @@ class HarmonySinger {
             engineSelect.value = this.engine;
             engineSelect.addEventListener('change', (e) => this.setEngine(e.target.value));
         }
+        const recordBtn = document.getElementById('recordBtn');
+        if (recordBtn) {
+            recordBtn.addEventListener('click', () => {
+                try {
+                    if (this.isRecording()) this.stopRecording(); else this.startRecording();
+                } catch (err) {
+                    document.getElementById('recordStatus').textContent = err.message;
+                }
+            });
+        }
+        const recordMode = document.getElementById('recordMode');
+        if (recordMode) {
+            recordMode.value = this.recordMode;
+            recordMode.addEventListener('change', (e) => { this.recordMode = e.target.value; });
+        }
+        const logBtn = document.getElementById('logBtn');
+        if (logBtn) logBtn.addEventListener('click', () => this.downloadLog());
 
         this.bindSlider('harmonyVolume', 'volumeValue', v => { this.harmonyVolume = v; this.updateGains(); });
         this.bindSlider('dryVolume', 'dryValue', v => { this.dryVolume = v; this.updateGains(); });
@@ -276,10 +477,11 @@ class HarmonySinger {
         const speakerToggle = document.getElementById('speakerModeToggle');
         if (speakerToggle) speakerToggle.addEventListener('click', () => this.toggleSpeakerMode());
 
-        // Reflect URL-driven state in the buttons
         this.setMode(this.currentMode, { silent: true });
         this.setScale(this.currentScale);
         this.updateKeyStatus();
+        this.renderSpeakerMode();
+        this.renderRecording();
         this.setupCanvas();
     }
 
@@ -289,6 +491,7 @@ class HarmonySinger {
         el.addEventListener('input', (e) => {
             document.getElementById(valueId).textContent = `${e.target.value}%`;
             cb(e.target.value / 100);
+            this.logEvent('setting', { id, value: e.target.value });
         });
     }
 
@@ -298,14 +501,16 @@ class HarmonySinger {
             btn.classList.toggle('active', btn.dataset.position === position);
         });
         this.updateGains();
+        this.logEvent('position', { position });
     }
 
     setKey(root) {
         this.keyRoot = root;
         const keySelect = document.getElementById('keyRoot');
         if (keySelect && keySelect.value !== root) keySelect.value = root;
-        this.stableMidi = null; // force re-evaluation of every voice
+        this.stableMidi = null;
         this.updateKeyStatus();
+        this.logEvent('key', { root });
     }
 
     setScale(scale) {
@@ -316,6 +521,7 @@ class HarmonySinger {
         });
         this.stableMidi = null;
         this.updateKeyStatus();
+        this.logEvent('scale', { scale });
     }
 
     setEngine(engine) {
@@ -323,6 +529,11 @@ class HarmonySinger {
         this.engine = engine;
         const sel = document.getElementById('engineSelect');
         if (sel && sel.value !== engine) sel.value = engine;
+        this.logEvent('engine', { engine });
+        this.restartIfRunning();
+    }
+
+    restartIfRunning() {
         if (this.isRunning) {
             this.stop();
             setTimeout(() => this.start(), 100);
@@ -330,15 +541,38 @@ class HarmonySinger {
     }
 
     toggleSpeakerMode() {
-        this.speakerMode = !this.speakerMode;
+        this.setSpeakerMode(!this.speakerMode);
+    }
+
+    setSpeakerMode(on) {
+        this.speakerMode = !!on;
+        this.logEvent('speaker-mode', { on: this.speakerMode });
+        this.renderSpeakerMode();
+        this.restartIfRunning();
+    }
+
+    renderSpeakerMode() {
         const toggle = document.getElementById('speakerModeToggle');
         if (toggle) toggle.classList.toggle('on', this.speakerMode);
         const statusText = document.getElementById('speakerModeStatus');
-        if (statusText) statusText.textContent = this.speakerMode ? 'Speaker Mode (AEC On)' : 'Headphone Mode';
-        if (this.isRunning) {
-            this.stop();
-            setTimeout(() => this.start(), 100);
+        if (statusText) {
+            statusText.textContent = this.speakerMode
+                ? 'Speaker Mode: echo cancellation, harmony gate, feedback guard on; your own voice is not monitored'
+                : 'Headphone Mode: full monitoring, no feedback processing';
         }
+        const dryNote = document.getElementById('dryNote');
+        if (dryNote) dryNote.textContent = this.speakerMode ? 'Muted in Speaker Mode (you hear yourself in the room)' : '';
+        this.updateGuardStatus();
+    }
+
+    updateGuardStatus() {
+        const el = document.getElementById('guardStatus');
+        if (!el) return;
+        if (!this.speakerMode) { el.textContent = ''; return; }
+        const active = this.notches.filter(n => n.active);
+        const list = active.map(n => `${n.hz >= 1000 ? (n.hz / 1000).toFixed(2) + ' kHz' : Math.round(n.hz) + ' Hz'}`).join(', ');
+        el.textContent = `Feedback guard: ${active.length} notch${active.length === 1 ? '' : 'es'}${list ? ' (' + list + ')' : ''}` +
+            (this.isRunning ? ` · gate ${this.gateOpen ? 'open' : 'closed'}` : '');
     }
 
     setMode(mode, opts = {}) {
@@ -356,6 +590,7 @@ class HarmonySinger {
             simpleHarmony.style.display = 'flex';
             choirLayout.classList.remove('visible');
         }
+        if (!opts.silent) this.logEvent('mode', { mode });
         if (this.isRunning && !opts.silent) {
             this.rebuildVoices();
         }
@@ -375,9 +610,9 @@ class HarmonySinger {
         if (this.isRunning) {
             btn.textContent = 'Stop';
             btn.classList.add('active');
-            status.textContent = this.testOsc
-                ? `Test tone input (${this.params.get('freq') || 220} Hz) – engine: ${this.engine}`
-                : `Listening... Sing something! (engine: ${this.engine})`;
+            status.textContent = (this.testOsc
+                ? `Test tone input (${this.params.get('freq') || 220} Hz)`
+                : 'Listening... Sing something!') + ` · engine: ${this.engine} · ${this.speakerMode ? 'speakers' : 'headphones'}`;
             status.className = 'status listening';
         } else {
             btn.textContent = 'Start Singing';
@@ -388,6 +623,8 @@ class HarmonySinger {
             document.getElementById('currentNote').classList.remove('singing');
             document.getElementById('frequency').textContent = 'Waiting for input...';
         }
+        this.updateGuardStatus();
+        this.renderRecording();
     }
 
     updateKeyStatus() {
@@ -407,7 +644,6 @@ class HarmonySinger {
 
     // ---------- Key handling ----------
 
-    /** Returns {root (0-11), type ('major'|'minor'|'chromatic')} currently in force. */
     effectiveKey() {
         const type = this.currentScale;
         if (this.keyRoot !== 'auto') {
@@ -419,20 +655,20 @@ class HarmonySinger {
 
     accumulateKeyEvidence(midi, now) {
         const pc = ((Math.round(midi) % 12) + 12) % 12;
-        for (let i = 0; i < 12; i++) this.pitchClassHist[i] *= 0.998; // slow forgetting
+        for (let i = 0; i < 12; i++) this.pitchClassHist[i] *= 0.998;
         this.pitchClassHist[pc] += 1;
         if (now - this.lastKeyScan < 500) return;
         this.lastKeyScan = now;
         const allowed = this.currentScale === 'minor' ? ['minor'] : this.currentScale === 'major' ? ['major'] : ['major', 'minor'];
         const res = detectKeyFromHistogram(Array.from(this.pitchClassHist), allowed);
-        if (!res || res.total < 40) return; // need ~2/3 s of voiced frames
+        if (!res || res.total < 40) return;
         const margin = res.best.score - res.second.score;
         if (!this.detectedKey || res.best.root !== this.detectedKey.root) {
-            // only switch when clearly better than the incumbent
             if (!this.detectedKey || margin > 0.03 || res.best.score > this.detectedKey.score + 0.05) {
                 this.detectedKey = { ...res.best };
                 this.stableMidi = null;
                 this.updateKeyStatus();
+                this.logEvent('auto-key', { root: NOTE_NAMES[res.best.root], type: res.best.type, score: +res.best.score.toFixed(3) });
             }
         } else {
             this.detectedKey.score = res.best.score;
@@ -450,64 +686,126 @@ class HarmonySinger {
         try {
             await Tone.start();
             this.audioContext = Tone.getContext().rawContext;
+            const ctx = this.audioContext;
 
-            const useTestTone = this.params.get('input') === 'tone';
-            if (useTestTone) {
+            // ---- input source
+            if (this.params.get('input') === 'tone') {
                 const freq = parseFloat(this.params.get('freq') || '220');
-                const osc = this.audioContext.createOscillator();
+                const osc = ctx.createOscillator();
                 osc.type = this.params.get('wave') || 'sawtooth';
                 osc.frequency.value = freq;
-                const lp = this.audioContext.createBiquadFilter();
+                const lp = ctx.createBiquadFilter();
                 lp.type = 'lowpass';
                 lp.frequency.value = 2500;
-                const g = this.audioContext.createGain();
+                const g = ctx.createGain();
                 g.gain.value = 0.25;
                 osc.connect(lp).connect(g);
                 osc.start();
                 this.testOsc = osc;
                 this.micSource = g;
+                const howlHz = parseFloat(this.params.get('howl') || '0');
+                if (howlHz > 0) {
+                    // a pure line that fades in and keeps rising, like a speaker->mic howl building up
+                    const h = ctx.createOscillator();
+                    h.type = 'sine';
+                    h.frequency.value = howlHz;
+                    const hg = ctx.createGain();
+                    hg.gain.value = 0.0001;
+                    hg.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + 2.5);
+                    h.connect(hg).connect(g);
+                    h.start();
+                    this.howlOsc = h;
+                }
+                this.logEvent('start', { input: 'tone', freq, wave: osc.type, howl: howlHz || null, engine: this.engine, speakerMode: this.speakerMode, sampleRate: ctx.sampleRate });
             } else {
                 const audioConstraints = {
                     echoCancellation: this.speakerMode,
                     noiseSuppression: this.speakerMode,
                     autoGainControl: this.speakerMode,
-                    sampleRate: this.audioContext.sampleRate
+                    sampleRate: ctx.sampleRate
                 };
                 this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
                 const track = this.mediaStream.getAudioTracks()[0];
-                console.log('Actual audio settings:', track.getSettings());
-                this.micSource = this.audioContext.createMediaStreamSource(this.mediaStream);
+                const settings = track.getSettings();
+                console.log('Actual audio settings:', settings);
+                this.logEvent('start', { input: 'microphone', requested: audioConstraints, actual: settings, label: track.label, engine: this.engine, speakerMode: this.speakerMode, sampleRate: ctx.sampleRate });
+                if (this.speakerMode && settings.echoCancellation === false) {
+                    this.logEvent('warning', { message: 'Browser did not apply echo cancellation; relying on gate + feedback guard only' });
+                }
+                this.micSource = ctx.createMediaStreamSource(this.mediaStream);
             }
 
-            this.mic = new Tone.Gain(1);
-            this.micSource.connect(this.mic.input);
+            // ---- raw-input analyser for the feedback guard
+            this.guardAnalyser = ctx.createAnalyser();
+            this.guardAnalyser.fftSize = 4096;
+            this.guardAnalyser.smoothingTimeConstant = 0.2;
+            this.micSource.connect(this.guardAnalyser);
 
+            // ---- guarded input: [highpass -> notch bank] in speaker mode, straight through otherwise
+            this.mic = new Tone.Gain(1);
+            this.notchNodes = [];
+            this.notches = [];
+            if (this.speakerMode) {
+                this.hpFilter = ctx.createBiquadFilter();
+                this.hpFilter.type = 'highpass';
+                this.hpFilter.frequency.value = 120;
+                this.hpFilter.Q.value = 0.7;
+                let last = this.hpFilter;
+                for (let i = 0; i < GUARD.maxNotches; i++) {
+                    const n = ctx.createBiquadFilter();
+                    n.type = 'notch';
+                    n.frequency.value = 20;  // parked: inaudible
+                    n.Q.value = GUARD.notchQ;
+                    last.connect(n);
+                    last = n;
+                    this.notchNodes.push(n);
+                    this.notches.push({ hz: 20, lastSeen: 0, active: false });
+                }
+                this.micSource.connect(this.hpFilter);
+                last.connect(this.mic.input);
+            } else {
+                this.micSource.connect(this.mic.input);
+            }
+
+            // ---- analysers on the guarded input
+            this.pitchAnalyser = ctx.createAnalyser();
+            this.pitchAnalyser.fftSize = 2048;
+            this.mic.connect(this.pitchAnalyser);
+            this.postGuardAnalyser = ctx.createAnalyser();
+            this.postGuardAnalyser.fftSize = 4096;
+            this.postGuardAnalyser.smoothingTimeConstant = 0.2;
+            this.mic.connect(this.postGuardAnalyser);
             this.analyser = new Tone.Analyser('waveform', 2048);
+            this.mic.connect(this.analyser);
+
+            // ---- effects and output
             this.chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: this.chorusAmount });
             this.chorus.start();
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
             await this.reverb.generate();
             this.masterGain = new Tone.Gain(1);
-            this.dryGain = new Tone.Gain(this.dryVolume);
+            this.limiter = new Tone.Limiter(-3);
+            this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
+            this.gateGain = new Tone.Gain(1);
+            this.lpFilter = new Tone.Filter({ type: 'lowpass', frequency: this.speakerMode ? 6000 : 20000, rolloff: -12 });
 
-            // dry: mic -> dryGain -> chorus -> reverb -> master -> out
-            this.mic.connect(this.analyser);
+            // dry: mic -> dryGain -> chorus -> reverb -> master -> limiter -> out
             this.mic.connect(this.dryGain);
             this.dryGain.connect(this.chorus);
+            // harmonies: voices -> gateGain -> lpFilter -> chorus
+            this.gateGain.connect(this.lpFilter);
+            this.lpFilter.connect(this.chorus);
             this.chorus.connect(this.reverb);
             this.reverb.connect(this.masterGain);
-            this.masterGain.toDestination();
-
-            // native analyser for YIN on the input
-            this.pitchAnalyser = this.audioContext.createAnalyser();
-            this.pitchAnalyser.fftSize = 2048;
-            this.micSource.connect(this.pitchAnalyser);
+            this.masterGain.connect(this.limiter);
+            this.limiter.toDestination();
 
             try {
                 await this.createPitchShifters();
             } catch (engineErr) {
                 if (this.engine === 'stretch') {
                     console.warn('Signalsmith engine failed, falling back to granular:', engineErr);
+                    this.logEvent('engine-fallback', { error: String(engineErr && engineErr.message) });
                     this.engine = 'granular';
                     const sel = document.getElementById('engineSelect');
                     if (sel) sel.value = 'granular';
@@ -517,12 +815,17 @@ class HarmonySinger {
                 }
             }
 
+            this.gateOpen = !this.speakerMode;
+            if (this.speakerMode) this.gateGain.gain.value = 0;
+            this.guardCandidates = [];
             this.isRunning = true;
             this.updateUI();
             this.startPitchDetection();
             this.drawWaveform();
+            if (this.params.get('record') === '1') this.startRecording();
         } catch (err) {
             console.error('Error starting:', err);
+            this.logEvent('error', { message: String(err && err.message), name: err && err.name });
             document.getElementById('status').textContent = 'Error: ' + err.message;
             document.getElementById('status').className = 'status idle';
         }
@@ -552,7 +855,7 @@ class HarmonySinger {
                 if (shifter.configure) shifter.configure({ blockMs, intervalMs: blockMs / 4 });
                 shifter.schedule({ semitones: 0, formantCompensation: true, formantBaseHz: 0 });
                 shifter.start();
-                this.micSource.connect(shifter);
+                this.mic.connect(shifter);
                 shifter.connect(tap);
                 Tone.connect(shifter, gain);
             } else {
@@ -561,7 +864,7 @@ class HarmonySinger {
                 shifter.connect(tap);
                 shifter.connect(gain);
             }
-            gain.connect(this.chorus); // harmonies go through chorus + reverb
+            gain.connect(this.gateGain);
             this.pitchShifters[voice] = shifter;
             this.gains[voice] = gain;
             this.voiceAnalysers[voice] = tap;
@@ -591,8 +894,10 @@ class HarmonySinger {
     }
 
     updateGains() {
-        if (this.dryGain) this.dryGain.gain.value = this.dryVolume;
+        if (this.dryGain) this.dryGain.gain.value = this.speakerMode ? 0 : this.dryVolume;
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
+        const cap = this.speakerMode ? 0.7 : 1;                       // less gain before feedback
+        const duck = (this.speakerMode && performance.now() < this.duckUntil) ? 0.5 : 1;
         Object.keys(this.gains).forEach(key => {
             let level;
             if (four) {
@@ -603,7 +908,7 @@ class HarmonySinger {
                 if (this.harmonyPosition === 'below' && key === 'upper') play = false;
                 level = play ? this.harmonyVolume * 0.6 : 0;
             }
-            this.gains[key].gain.value = level;
+            this.gains[key].gain.value = level * cap * duck;
         });
     }
 
@@ -619,11 +924,11 @@ class HarmonySinger {
         }
     }
 
-    /** Recompute every harmony voice for the quantized input note. */
     applyHarmonyForMidi(inputMidi) {
         const key = this.effectiveKey();
         const degreeMode = DEGREE_MODES[this.currentMode];
         const semiMode = SEMITONE_MODES[this.currentMode];
+        const shifts = {};
         for (const voice of this.voiceNames()) {
             let shift;
             if (key.type === 'chromatic') {
@@ -633,49 +938,66 @@ class HarmonySinger {
             }
             this.voiceTargets[voice] = inputMidi + shift;
             this.setVoiceShift(voice, shift);
+            shifts[voice] = shift;
         }
+        this.logEvent('note', { input: midiToName(inputMidi), midi: inputMidi, key: `${NOTE_NAMES[key.root]} ${key.type}`, shifts });
     }
 
     stop() {
+        if (this.isRecording()) this.stopRecording();
         this.isRunning = false;
+        this.logEvent('stop', {});
         if (this.mediaStream) {
             this.mediaStream.getTracks().forEach(t => t.stop());
             this.mediaStream = null;
         }
-        if (this.testOsc) {
-            try { this.testOsc.stop(); } catch (e) { /* ignore */ }
-            this.testOsc = null;
+        for (const o of [this.testOsc, this.howlOsc]) {
+            if (o) { try { o.stop(); } catch (e) { /* ignore */ } }
         }
-        if (this.micSource) { try { this.micSource.disconnect(); } catch (e) { /* ignore */ } this.micSource = null; }
-        if (this.mic) { this.mic.dispose(); this.mic = null; }
-        if (this.pitchAnalyser) { this.pitchAnalyser.disconnect(); this.pitchAnalyser = null; }
+        this.testOsc = null;
+        this.howlOsc = null;
+        const nativeNodes = [this.micSource, this.guardAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
+        nativeNodes.forEach(n => { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } });
+        this.micSource = null; this.guardAnalyser = null; this.pitchAnalyser = null; this.postGuardAnalyser = null; this.hpFilter = null;
+        this.notchNodes = [];
+        this.notches = [];
         this.disposeVoices();
-        if (this.chorus) this.chorus.dispose();
-        if (this.reverb) this.reverb.dispose();
-        if (this.masterGain) this.masterGain.dispose();
-        if (this.dryGain) this.dryGain.dispose();
-        if (this.analyser) this.analyser.dispose();
+        [this.mic, this.gateGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser]
+            .forEach(n => { if (n) { try { n.dispose(); } catch (e) { /* ignore */ } } });
+        this.mic = null; this.gateGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
+        this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null;
         this.smoothedPitch = null;
         this.stableMidi = null;
+        this.guardCandidates = [];
         this.updateUI();
     }
 
-    // ---------- Pitch detection loop ----------
+    // ---------- Pitch detection + feedback guard loop ----------
 
     startPitchDetection() {
         const buf = new Float32Array(this.pitchAnalyser.fftSize);
         const detect = () => {
             if (!this.isRunning) return;
+            this.frameCounter++;
+            const now = performance.now();
             this.pitchAnalyser.getFloatTimeDomainData(buf);
+            let rms = 0;
+            for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+            rms = Math.sqrt(rms / buf.length);
+            this.lastInputRms = rms;
             const pitch = yinPitch(buf, this.audioContext.sampleRate);
+            const voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.004);
 
-            if (pitch && pitch > 60 && pitch < 2000) {
+            // Spectral analysis every ~100 ms: classify the input and hunt for howls.
+            if (this.frameCounter % GUARD.analyseEveryFrames === 0) {
+                this.analyseSpectrum(voiced ? pitch : null, now);
+            }
+
+            if (voiced) {
                 this.smoothedPitch = this.smoothedPitch === null
                     ? pitch
                     : this.smoothedPitch * this.smoothing + pitch * (1 - this.smoothing);
                 const midi = Math.round(freqToMidi(this.smoothedPitch));
-
-                // Debounce the quantized note so harmonies don't flutter at note boundaries.
                 if (midi === this.candidateMidi) {
                     this.candidateFrames++;
                 } else {
@@ -686,15 +1008,120 @@ class HarmonySinger {
                     this.stableMidi = midi;
                     this.applyHarmonyForMidi(midi);
                 }
-                if (this.keyRoot === 'auto') this.accumulateKeyEvidence(midi, performance.now());
+                if (this.keyRoot === 'auto' && this.harmonicVoice) this.accumulateKeyEvidence(midi, now);
                 this.updatePitchDisplay(this.smoothedPitch, midi);
             } else {
                 this.candidateFrames = 0;
                 if (this.lastPitch !== null) document.getElementById('currentNote').classList.remove('singing');
             }
+
+            // Harmony gate (speaker mode): only sing along while a real voice is present.
+            if (this.speakerMode) {
+                if (voiced && this.harmonicVoice) this.lastVoicedAt = now;
+                const shouldOpen = now - this.lastVoicedAt < 220;
+                if (shouldOpen !== this.gateOpen) {
+                    this.gateOpen = shouldOpen;
+                    this.gateGain.gain.rampTo(shouldOpen ? 1 : 0, shouldOpen ? 0.03 : 0.15);
+                    this.updateGuardStatus();
+                    this.logEvent('gate', { open: shouldOpen });
+                }
+                if (this.duckUntil && now > this.duckUntil) { this.duckUntil = 0; this.updateGains(); }
+            }
+
+            // Periodic stats for the debug log (2 Hz).
+            if (now - this.lastStatLog > 500) {
+                this.lastStatLog = now;
+                this.logEvent('stats', {
+                    rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice,
+                    gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
+                    peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)])
+                });
+            }
+
             requestAnimationFrame(detect);
         };
         detect();
+    }
+
+    /** Peak picking on the raw input; voice/pure-tone classification; howl candidate tracking. */
+    analyseSpectrum(f0, now) {
+        const spec = new Float32Array(this.guardAnalyser.frequencyBinCount);
+        this.guardAnalyser.getFloatFrequencyData(spec);
+        const binHz = this.audioContext.sampleRate / this.guardAnalyser.fftSize;
+        const peaks = findSpectralPeaks(spec, binHz, GUARD.minHz, GUARD.maxHz, 8, -70);
+        this.lastPeaks = peaks;
+
+        // Does the input look like a voice? A sung note carries several harmonics of f0;
+        // feedback is a single line. Count harmonics present among the peaks.
+        let harmonicsFound = 0;
+        const isHarmonicOf = (hz) => {
+            if (!f0) return false;
+            const k = Math.round(hz / f0);
+            return k >= 1 && k <= 16 && Math.abs(hz - k * f0) / (k * f0) < 0.03;
+        };
+        if (f0) {
+            for (let k = 1; k <= 6; k++) {
+                if (peaks.some(p => Math.abs(p.hz - k * f0) / (k * f0) < 0.03)) harmonicsFound++;
+            }
+        }
+        this.harmonicVoice = f0 ? harmonicsFound >= 2 : false;
+        if (!this.speakerMode) return;
+
+        // Howl candidates: strong, non-harmonic lines (or the lone line of a pure tone).
+        const strong = peaks.filter(p => p.papr >= GUARD.peakPapr && p.db >= GUARD.minLevelDb &&
+            !(this.harmonicVoice && isHarmonicOf(p.hz)));
+        for (const p of strong) {
+            let c = this.guardCandidates.find(x => Math.abs(x.hz - p.hz) / p.hz < 0.03);
+            if (c) {
+                c.frames++; c.lastDb = p.db; c.lastSeen = now; c.hz = 0.8 * c.hz + 0.2 * p.hz;
+            } else {
+                c = { hz: p.hz, frames: 1, firstDb: p.db, lastDb: p.db, lastSeen: now };
+                this.guardCandidates.push(c);
+            }
+            const rising = c.lastDb - c.firstDb >= GUARD.riseDb;
+            if (c.frames >= GUARD.confirmFrames && (rising || c.frames >= GUARD.sustainFrames)) {
+                this.engageNotch(c.hz, now);
+                c.firstDb = c.lastDb; // re-arm: a further rise re-triggers the duck
+            }
+        }
+        this.guardCandidates = this.guardCandidates.filter(c => now - c.lastSeen < 350);
+
+        // Release notches that have not been needed for a while.
+        this.notches.forEach((n, i) => {
+            if (n.active && now - n.lastSeen > GUARD.releaseMs) {
+                n.active = false;
+                this.notchNodes[i].frequency.setTargetAtTime(20, this.audioContext.currentTime, 0.05);
+                this.logEvent('notch-released', { hz: Math.round(n.hz) });
+                this.updateGuardStatus();
+            }
+        });
+    }
+
+    engageNotch(hz, now) {
+        let idx = this.notches.findIndex(n => n.active && Math.abs(n.hz - hz) / hz < 0.04);
+        const fresh = idx < 0;
+        if (fresh) {
+            idx = this.notches.findIndex(n => !n.active);
+            if (idx < 0) {
+                idx = 0;
+                this.notches.forEach((n, i) => { if (n.lastSeen < this.notches[idx].lastSeen) idx = i; });
+            }
+        }
+        const n = this.notches[idx];
+        n.hz = fresh ? hz : 0.7 * n.hz + 0.3 * hz;
+        n.lastSeen = now;
+        n.active = true;
+        const node = this.notchNodes[idx];
+        node.frequency.setTargetAtTime(n.hz, this.audioContext.currentTime, 0.01);
+        node.Q.value = GUARD.notchQ;
+        if (fresh) {
+            this.guardEvents++;
+            this.duckUntil = now + GUARD.duckMs;
+            this.updateGains();
+            console.log(`Feedback guard: notch ${idx} at ${n.hz.toFixed(0)} Hz`);
+            this.logEvent('notch', { slot: idx, hz: Math.round(n.hz) });
+        }
+        this.updateGuardStatus();
     }
 
     updatePitchDisplay(frequency, midi) {
@@ -725,14 +1152,14 @@ class HarmonySinger {
 
     // ---------- Test hooks ----------
 
-    /** Change the synthetic input frequency (test mode only). */
     setTestFrequency(hz) {
         if (this.testOsc) this.testOsc.frequency.setTargetAtTime(hz, this.audioContext.currentTime, 0.01);
     }
 
     /** Measure the pitch actually coming out of each harmony voice. */
     measureVoices() {
-        const out = { engine: this.engine, key: this.effectiveKey(), detectedKey: this.detectedKey, input: null, voices: {} };
+        const out = { engine: this.engine, speakerMode: this.speakerMode, gateOpen: this.gateOpen,
+            harmonicVoice: this.harmonicVoice, key: this.effectiveKey(), detectedKey: this.detectedKey, input: null, voices: {} };
         if (this.smoothedPitch) {
             out.input = { hz: this.smoothedPitch, midi: Math.round(freqToMidi(this.smoothedPitch)), note: midiToName(freqToMidi(this.smoothedPitch)) };
         }
@@ -755,14 +1182,38 @@ class HarmonySinger {
         return out;
     }
 
-    /** Engine-reported live-input latency in seconds (Signalsmith engine only; granular ~ windowSize). */
+    /** Feedback-guard state plus the input level at `hz` before and after the notch bank. */
+    measureGuard(hz) {
+        const levelAt = (an, f) => {
+            if (!an) return null;
+            const spec = new Float32Array(an.frequencyBinCount);
+            an.getFloatFrequencyData(spec);
+            const binHz = this.audioContext.sampleRate / an.fftSize;
+            const b = Math.round(f / binHz);
+            let m = -Infinity;
+            for (let i = Math.max(0, b - 2); i <= Math.min(spec.length - 1, b + 2); i++) m = Math.max(m, spec[i]);
+            return m;
+        };
+        return {
+            speakerMode: this.speakerMode,
+            gateOpen: this.gateOpen,
+            harmonicVoice: this.harmonicVoice,
+            guardEvents: this.guardEvents,
+            inputRms: this.lastInputRms,
+            notches: this.notches.filter(n => n.active).map(n => ({ hz: n.hz })),
+            peaks: this.lastPeaks.slice(0, 6).map(p => ({ hz: Math.round(p.hz), db: Math.round(p.db), papr: Math.round(p.papr) })),
+            preDb: hz ? levelAt(this.guardAnalyser, hz) : null,
+            postDb: hz ? levelAt(this.postGuardAnalyser, hz) : null
+        };
+    }
+
     async engineLatency() {
         if (this.engine === 'stretch') {
             const any = Object.values(this.pitchShifters)[0];
             if (any && any.latency) return await any.latency();
             return null;
         }
-        return 0.1; // Tone.PitchShift windowSize
+        return 0.1;
     }
 
     // ---------- Visualizer ----------
@@ -796,7 +1247,7 @@ class HarmonySinger {
     }
 }
 
-window.HarmonyTheory = { harmonyShiftInKey, detectKeyFromHistogram, yinPitch, midiToName, freqToMidi, midiToFreq, SCALES, DEGREE_MODES, SEMITONE_MODES };
+window.HarmonyTheory = { harmonyShiftInKey, detectKeyFromHistogram, yinPitch, findSpectralPeaks, midiToName, freqToMidi, midiToFreq, SCALES, DEGREE_MODES, SEMITONE_MODES, GUARD };
 
 window.addEventListener('DOMContentLoaded', () => {
     window.harmonySinger = new HarmonySinger();

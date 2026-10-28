@@ -196,13 +196,65 @@ def main():
         r = runner.rows[-1]
         print(f"  {'OK ' if r[4] else 'FAIL'} upper want {r[1]:.1f} got {r[2] and round(r[2],1)} ({r[3] and round(r[3])}c)")
 
+        # ---- Speaker mode: feedback guard and harmony gate
+        print("\n== speaker mode: rising 3 kHz howl on top of a sung A3")
+        page.goto(base + "?input=tone&freq=220&autostart=1&speaker=1&howl=3000&key=C&scale=major&mode=thirds&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        page.wait_for_timeout(5000)
+        g = page.evaluate("window.harmonySinger.measureGuard(3000)")
+        notch_ok = any(abs(n["hz"] - 3000) / 3000 < 0.04 for n in g["notches"])
+        atten = (g["preDb"] - g["postDb"]) if (g["preDb"] is not None and g["postDb"] is not None) else None
+        atten_ok = atten is not None and atten >= 12
+        print(f"  {'OK ' if notch_ok else 'FAIL'} notch within 4% of 3000 Hz: {g['notches']}")
+        print(f"  {'OK ' if atten_ok else 'FAIL'} attenuation at 3 kHz pre->post notch bank: {atten and round(atten,1)} dB (pre {g['preDb'] and round(g['preDb'])}, post {g['postDb'] and round(g['postDb'])})")
+        print(f"  {'OK ' if g['gateOpen'] else 'FAIL'} gate open while a harmonic voice is present (harmonicVoice={g['harmonicVoice']})")
+        print(f"  peaks seen: {g['peaks']}")
+        if not notch_ok: runner.failures.append("guard:notch")
+        if not atten_ok: runner.failures.append("guard:attenuation")
+        if not g["gateOpen"]: runner.failures.append("guard:gate-open")
+        m = page.evaluate("window.harmonySinger.measureVoices()")
+        runner.check("guard: upper third still C4 with notch engaged", m["voices"]["upper"]["hz"], 60)
+        r = runner.rows[-1]
+        print(f"  {'OK ' if r[4] else 'FAIL'} upper want {r[1]:.1f} got {r[2] and round(r[2],1)} ({r[3] is not None and round(r[3])}c)")
+
+        print("\n== speaker mode: plain sung sawtooth must not trigger any notch")
+        page.goto(base + "?input=tone&freq=220&autostart=1&speaker=1&key=C&scale=major&mode=thirds&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        page.wait_for_timeout(5000)
+        g = page.evaluate("window.harmonySinger.measureGuard(220)")
+        ok = len(g["notches"]) == 0 and g["guardEvents"] == 0
+        print(f"  {'OK ' if ok else 'FAIL'} no notches on a harmonic voice: notches={g['notches']} events={g['guardEvents']} harmonicVoice={g['harmonicVoice']}")
+        if not ok: runner.failures.append("guard:false-positive")
+        m = page.evaluate("window.harmonySinger.measureVoices()")
+        runner.check("speaker mode: upper third C4 (gated path)", m["voices"]["upper"]["hz"], 60)
+        r = runner.rows[-1]
+        print(f"  {'OK ' if r[4] else 'FAIL'} upper want {r[1]:.1f} got {r[2] and round(r[2],1)} ({r[3] is not None and round(r[3])}c)")
+
+        print("\n== speaker mode: a lone pure tone (no harmonics) keeps the harmony gate closed")
+        page.goto(base + "?input=tone&wave=sine&freq=220&autostart=1&speaker=1&key=C&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        page.wait_for_timeout(2500)
+        g = page.evaluate("window.harmonySinger.measureGuard(220)")
+        ok = not g["gateOpen"] and not g["harmonicVoice"]
+        print(f"  {'OK ' if ok else 'FAIL'} gateOpen={g['gateOpen']} harmonicVoice={g['harmonicVoice']} peaks={g['peaks'][:3]}")
+        if not ok: runner.failures.append("guard:gate-closed-on-pure-tone")
+
+        print("\n== headphone mode: guard inactive, dry monitor on")
+        page.goto(base + "?input=tone&freq=220&autostart=1&key=C&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        page.wait_for_timeout(1500)
+        st = page.evaluate("({speaker: window.harmonySinger.speakerMode, gate: window.harmonySinger.gateOpen, dry: window.harmonySinger.dryGain.gain.value, notches: window.harmonySinger.notchNodes.length})")
+        ok = (not st["speaker"]) and st["gate"] and st["dry"] > 0.5 and st["notches"] == 0
+        print(f"  {'OK ' if ok else 'FAIL'} {st}")
+        if not ok: runner.failures.append("headphone-mode-state")
+
         browser.close()
 
     if server:
         server.terminate()
 
     print("\n== summary")
-    print(f"  checks: {len(runner.rows) + len(want) + 2}, failures: {len(runner.failures)}")
+    print(f"  checks: {len(runner.rows) + len(want) + 2 + 7}, failures: {len(runner.failures)}")
     for f in runner.failures:
         print("   -", f)
     if errors:
