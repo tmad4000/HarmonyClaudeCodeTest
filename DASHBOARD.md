@@ -13,6 +13,7 @@ Last updated: 2026-10-28
 - Earlier lineage (all fixed-interval, superseded): `~/code/VocalHarmony` (Jan 2025 Replit), `~/code/harmonizerSonnet37`, `~/code/AudioHarmonySync2`, `~/code/HarmonyBot3` (Feb 2025), `~/code/Replit/projects/VocalHarmony-1` tarball (Sept 2025 React/Replit, published URL now 404)
 
 ## Current session (2026-10-28)
+- Fixed "harmony blinks in and out on a sustained note": octave-robust YIN + continuity, gate opens on any voiced non-pure-tone input with 600 ms hold, HP 70 Hz, guard never notches recent voice harmonics. New rigs: `test/aec_doubletalk_fake_mic.py` (fake-mic WAV, AEC on), `test/sustained_tone_realistic.py` (real speakers). Verified stable; Chrome AEC does not suppress the singer because of our output.
 - Backing option: piano / pad / voice+piano playing harmony voices or in-key chords (`chordForNote`), instrument note on/off follows voice presence. Headless suite extended.
 - Speaker-safe mode shipped: AEC (AGC off after measuring 12 dB → 59 dB cancellation), dry mute, harmony gate, HP/LP, limiter, automatic feedback-guard notch bank. Headphone/Speakers toggle restarts the audio graph.
 - Record & Debug: input(L)+output(R) .webm recording and JSON event log, `?record=1`, `?log=1`.
@@ -32,6 +33,7 @@ Last updated: 2026-10-28
 - **Auto key vs manual key as the default?** Auto needs ~1 s of singing before it commits; manual is instant. Default is Auto.
 
 ## Open threads
+- Jacob's own blinking session was not logged (no Save-debug-log click). If it recurs on the new build: Record + Save debug log, files land in ~/Downloads as harmony-*.webm / harmony-log-*.json.
 - Not yet listened to by a human (pitch and cancellation verified programmatically only).
 - Speaker mode still relies on browser echo cancellation; `claude/SPEEX_AEC_PLAN.md` is the WASM AEC plan if feedback is still a problem.
 - `codex/` (PESTO ONNX + SoundTouch) needs a gated model download and was never run; `gemini/harmony_app` is a native Python/pedalboard variant with fixed intervals.

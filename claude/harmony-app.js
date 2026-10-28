@@ -219,14 +219,22 @@ function yinPitch(buffer, sampleRate, threshold = 0.2) {
         running += yin[t];
         yin[t] *= t / (running || 1e-12);
     }
-    let tau;
-    for (tau = 2; tau < MAX; tau++) {
-        if (yin[tau] < threshold) {
-            while (tau + 1 < MAX && yin[tau + 1] < yin[tau]) tau++;
+    // Search only the vocal range, find the deepest dip, then take the FIRST local dip that is
+    // nearly as deep. Plain "first dip below threshold" locks onto harmonics when the fundamental
+    // is weak (laptop mics/speakers, high-passed voices); "deepest dip" alone can pick subharmonics.
+    const tauMin = Math.max(2, Math.floor(sampleRate / 1000));
+    const tauMax = Math.min(MAX - 2, Math.floor(sampleRate / 60));
+    let gMin = Infinity;
+    for (let t = tauMin; t <= tauMax; t++) if (yin[t] < gMin) gMin = yin[t];
+    if (!(gMin < threshold)) return null;
+    let tau = -1;
+    for (let t = tauMin; t <= tauMax; t++) {
+        if (yin[t] < threshold && yin[t] <= yin[t - 1] && yin[t] <= yin[t + 1] && yin[t] <= gMin + 0.08) {
+            tau = t;
             break;
         }
     }
-    if (tau >= MAX || yin[tau] >= threshold) return null;
+    if (tau < 0) return null;
     const x0 = tau < 1 ? tau : tau - 1;
     const x2 = tau + 1 < MAX ? tau + 1 : tau;
     let better = tau;
@@ -333,6 +341,9 @@ class HarmonySinger {
         this.candidateFrames = 0;
         this.pitchClassHist = new Float32Array(12);
         this.lastKeyScan = 0;
+        this.jumpFrames = 0;
+        this.recentF0s = [];        // last ~1.5 s of detected fundamentals (for the feedback guard)
+        this.pureTone = false;
 
         // Guard / gate state
         this.frameCounter = 0;
@@ -903,7 +914,7 @@ class HarmonySinger {
                 // by ~11 dB, which eats straight into gain-before-feedback.
                 const audioConstraints = {
                     echoCancellation: this.speakerMode,
-                    noiseSuppression: this.speakerMode,
+                    noiseSuppression: this.speakerMode && this.params.get('ns') !== '0',
                     autoGainControl: false,
                     sampleRate: ctx.sampleRate
                 };
@@ -931,7 +942,7 @@ class HarmonySinger {
             if (this.speakerMode) {
                 this.hpFilter = ctx.createBiquadFilter();
                 this.hpFilter.type = 'highpass';
-                this.hpFilter.frequency.value = 120;
+                this.hpFilter.frequency.value = 70;
                 this.hpFilter.Q.value = 0.7;
                 let last = this.hpFilter;
                 for (let i = 0; i < GUARD.maxNotches; i++) {
@@ -1190,7 +1201,7 @@ class HarmonySinger {
             for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
             rms = Math.sqrt(rms / buf.length);
             this.lastInputRms = rms;
-            const pitch = yinPitch(buf, this.audioContext.sampleRate);
+            let pitch = yinPitch(buf, this.audioContext.sampleRate);
             const voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.004);
 
             // Spectral analysis every ~100 ms: classify the input and hunt for howls.
@@ -1199,9 +1210,28 @@ class HarmonySinger {
             }
 
             if (voiced) {
-                this.smoothedPitch = this.smoothedPitch === null
-                    ? pitch
-                    : this.smoothedPitch * this.smoothing + pitch * (1 - this.smoothing);
+                // Continuity: if the new estimate is an octave/harmonic flip of what we were tracking,
+                // fold it back onto the tracked register (|p, p/2, p/3, p/4, 2p| nearest the track).
+                if (this.smoothedPitch !== null) {
+                    const s0 = this.smoothedPitch;
+                    const cands = [pitch, pitch / 2, pitch / 3, pitch / 4, pitch * 2];
+                    let best = pitch, bestCents = Infinity;
+                    for (const c of cands) {
+                        const cents = Math.abs(1200 * Math.log2(c / s0));
+                        if (cents < bestCents) { bestCents = cents; best = c; }
+                    }
+                    if (best !== pitch && bestCents < 150) pitch = best;
+                }
+                if (this.smoothedPitch !== null && Math.abs(12 * Math.log2(pitch / this.smoothedPitch)) > 7) {
+                    // big jump (usually an octave error): believe it only if it persists
+                    this.jumpFrames++;
+                    if (this.jumpFrames >= 3) { this.smoothedPitch = pitch; this.jumpFrames = 0; }
+                } else {
+                    this.jumpFrames = 0;
+                    this.smoothedPitch = this.smoothedPitch === null
+                        ? pitch
+                        : this.smoothedPitch * this.smoothing + pitch * (1 - this.smoothing);
+                }
                 const midi = Math.round(freqToMidi(this.smoothedPitch));
                 if (midi === this.candidateMidi) {
                     this.candidateFrames++;
@@ -1221,8 +1251,8 @@ class HarmonySinger {
             }
 
             // Voice presence (both modes) drives instrument note on/off.
-            if (voiced && this.harmonicVoice) this.lastVoiceSeen = now;
-            const present = now - this.lastVoiceSeen < 250;
+            if (voiced && !this.pureTone) this.lastVoiceSeen = now;
+            const present = now - this.lastVoiceSeen < 400;
             if (present !== this.voicePresent) {
                 this.voicePresent = present;
                 if (present) {
@@ -1234,8 +1264,8 @@ class HarmonySinger {
 
             // Harmony gate (speaker mode): only sing along while a real voice is present.
             if (this.speakerMode) {
-                if (voiced && this.harmonicVoice) this.lastVoicedAt = now;
-                const shouldOpen = now - this.lastVoicedAt < 220;
+                if (voiced && !this.pureTone) this.lastVoicedAt = now;
+                const shouldOpen = now - this.lastVoicedAt < 600;
                 if (shouldOpen !== this.gateOpen) {
                     this.gateOpen = shouldOpen;
                     this.gateGain.gain.rampTo(shouldOpen ? 1 : 0, shouldOpen ? 0.03 : 0.15);
@@ -1249,7 +1279,7 @@ class HarmonySinger {
             if (now - this.lastStatLog > 500) {
                 this.lastStatLog = now;
                 this.logEvent('stats', {
-                    rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice,
+                    rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
                     gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
                     peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)])
                 });
@@ -1271,22 +1301,37 @@ class HarmonySinger {
         // Does the input look like a voice? A sung note carries several harmonics of f0;
         // feedback is a single line. Count harmonics present among the peaks.
         let harmonicsFound = 0;
+        // A line counts as a voice harmonic only if it sits close to k*f0 in absolute terms
+        // (3% of f0, or 1.5% of the line itself for high k); a loose percentage at high k let a
+        // 3 kHz howl hide as the "14th harmonic" of a 220 Hz voice.
+        const harmonicTol = (f, hz) => Math.max(0.03 * f, 0.015 * hz);
         const isHarmonicOf = (hz) => {
             if (!f0) return false;
             const k = Math.round(hz / f0);
-            return k >= 1 && k <= 16 && Math.abs(hz - k * f0) / (k * f0) < 0.03;
+            return k >= 1 && k <= 12 && Math.abs(hz - k * f0) < harmonicTol(f0, hz);
         };
         if (f0) {
             for (let k = 1; k <= 6; k++) {
                 if (peaks.some(p => Math.abs(p.hz - k * f0) / (k * f0) < 0.03)) harmonicsFound++;
             }
         }
-        this.harmonicVoice = f0 ? harmonicsFound >= 2 : false;
+        const top = peaks[0];
+        const lines = top ? peaks.filter(p => p.papr >= 12 && p.db >= top.db - 25) : [];
+        this.pureTone = !!f0 && lines.length <= 1 && harmonicsFound < 2;
+        this.harmonicVoice = !!f0 && !this.pureTone;
+        if (f0) {
+            this.recentF0s.push(f0);
+            if (this.recentF0s.length > 15) this.recentF0s.shift();
+        }
         if (!this.speakerMode) return;
 
         // Howl candidates: strong, non-harmonic lines (or the lone line of a pure tone).
+        const nearRecentVoice = (hz) => this.recentF0s.some(f => {
+            const k = Math.round(hz / f);
+            return k >= 1 && k <= 12 && Math.abs(hz - k * f) < harmonicTol(f, hz);
+        });
         const strong = peaks.filter(p => p.papr >= GUARD.peakPapr && p.db >= GUARD.minLevelDb &&
-            !(this.harmonicVoice && isHarmonicOf(p.hz)));
+            !(this.harmonicVoice && isHarmonicOf(p.hz)) && !(this.harmonicVoice && nearRecentVoice(p.hz)));
         for (const p of strong) {
             let c = this.guardCandidates.find(x => Math.abs(x.hz - p.hz) / p.hz < 0.03);
             if (c) {
@@ -1296,7 +1341,8 @@ class HarmonySinger {
                 this.guardCandidates.push(c);
             }
             const rising = c.lastDb - c.firstDb >= GUARD.riseDb;
-            if (c.frames >= GUARD.confirmFrames && (rising || c.frames >= GUARD.sustainFrames)) {
+            const sustainedWhileSilent = c.frames >= GUARD.sustainFrames && !f0;
+            if (c.frames >= GUARD.confirmFrames && (rising || sustainedWhileSilent)) {
                 this.engageNotch(c.hz, now);
                 c.firstDb = c.lastDb; // re-arm: a further rise re-triggers the duck
             }

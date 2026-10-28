@@ -182,3 +182,28 @@ samples via tonejs.github.io (network on first use); pad = fat-saw PolySynth thr
 low-pass. Notes follow the same debounced note detector, sustain while a harmonic voice is present
 and release 250 ms after it stops. Headless checks cover the chord picker, pad chords (C4 → C3 E3
 G3), a single pad voice in tune, sampled piano with voice+piano, and release on silence.
+
+## "Harmony blinks in and out on a sustained note" (2026-10-28)
+
+Reported by Jacob singing a continuous tone intermittently in speaker mode. Reproduced with a
+synthetic sung tone and fixed; four things were conspiring:
+
+1. **Pitch detector locked onto harmonics.** Plain YIN "first dip below threshold" picks a
+   harmonic when the fundamental is weak (built-in mic, high-passed voice). Now: search the vocal
+   range, find the deepest dip, take the first dip nearly as deep; plus octave-flip continuity and
+   a 3-frame guard on >7-semitone jumps.
+2. **Gate demanded a strict harmonic test every 100 ms** and held only 220 ms. Now the gate opens
+   on any voiced, non-pure-tone input and holds 600 ms (instrument notes hold 400 ms).
+3. **120 Hz high-pass** was shaving low male fundamentals. Now 70 Hz (rumble only).
+4. Feedback guard could notch a voice harmonic if the voice test flickered. Now it never notches
+   harmonics of any fundamental heard in the last 1.5 s (tight absolute tolerance, k ≤ 12) and the
+   "sustained line" rule only fires when nobody is singing; the "rising line" rule still catches howls.
+
+Evidence after the fix (`claude/test/aec_doubletalk_fake_mic.py`, WAV fed to Chrome as a fake
+mic so the canceller still runs): gate open 96–100 % of the sung time in all four cases, one
+note re-target per take, no notches; input level identical with harmonies audible, muted, or
+replaced by the pad, so Chrome's canceller is not suppressing the singer because of our output.
+`sustained_tone_realistic.py` (tone through the real speakers) tracks 194–198 Hz throughout.
+Rig lesson: a synthetic singer played through the laptop speakers is system output and gets
+cancelled by the AEC itself; and the first version of the generator had a phase bug that turned
+"vibrato" into a frequency sweep, which produced misleading harmonic-lock readings.
