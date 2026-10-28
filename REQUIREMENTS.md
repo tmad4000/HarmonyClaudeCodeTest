@@ -154,3 +154,20 @@ runtime key switch, Classic Choir SATB, both engines, and auto key detection ove
 
 Tone.js `PitchShift` is audibly flat on downward shifts, which is one reason every earlier attempt
 (VocalHarmony Jan 2025, harmonizerSonnet37, AudioHarmonySync2, VocalHarmony-1 Sept 2025) sounded off.
+
+## Speaker-mode / feedback verification (2026-10-28)
+
+`claude/test/aec_realistic.py` plays a 1 kHz tone from the page through the laptop speakers and
+measures how much of it the microphone path still contains (M5 MacBook Air built-in mic + speakers):
+
+| Mic constraints | Tone in mic | Cancellation vs headphone mode |
+|---|---|---|
+| echoCancellation off (headphone mode) | −47 dB | — |
+| AEC + NS + **AGC on** | −53 dB (max −22 dB while converging) | 12 dB |
+| AEC + NS, **AGC off** (shipped) | −106 dB | **59 dB** |
+
+Auto gain control was fighting the echo canceller and lifting the mic floor by ~11 dB, so speaker
+mode now requests AEC + noise suppression only. On top of that: dry monitor muted, harmonies gated
+to voiced harmonic input, 120 Hz high-pass, 6 kHz low-pass, limiter, 0.7× gain cap, and an
+automatic notch bank (headless test: a rising 3 kHz howl is notched ~90 dB within 1 s while the
+harmony stays in tune; a sung sawtooth never triggers a notch).

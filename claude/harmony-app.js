@@ -718,10 +718,13 @@ class HarmonySinger {
                 }
                 this.logEvent('start', { input: 'tone', freq, wave: osc.type, howl: howlHz || null, engine: this.engine, speakerMode: this.speakerMode, sampleRate: ctx.sampleRate });
             } else {
+                // Speaker mode: echo cancellation + noise suppression on, but NO auto gain control.
+                // Measured on the M5 built-in mic (test/aec_realistic.py): AGC lifted the mic floor
+                // by ~11 dB, which eats straight into gain-before-feedback.
                 const audioConstraints = {
                     echoCancellation: this.speakerMode,
                     noiseSuppression: this.speakerMode,
-                    autoGainControl: this.speakerMode,
+                    autoGainControl: false,
                     sampleRate: ctx.sampleRate
                 };
                 this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });

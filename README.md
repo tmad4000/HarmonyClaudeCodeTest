@@ -9,6 +9,12 @@ A real-time vocal harmony generator that acts as your personal AI backup singer 
 > http://localhost:8080/claude/ . Verify without a microphone: `python3 claude/test/verify_harmony.py`
 > (needs the `playwright` Python package with Chromium). The root `index.html`/`app.js` below is the
 > original 2025-12-08 prototype and is kept for reference.
+>
+> **Laptop open, no headphones?** Flip the Headphones/Speakers toggle. Speaker mode turns on Chrome's
+> echo cancellation (measured 59 dB of cancellation on the M5 built-in mic once auto-gain is off),
+> mutes your own voice in the output, only lets the harmonies sound while you are actually singing,
+> and runs a feedback guard that notches any howl it hears building up. **Record & Debug** captures
+> input (L) + output (R) as .webm and saves a JSON log of notes, shifts, key, gate and notch events.
 
 ## Features
 
