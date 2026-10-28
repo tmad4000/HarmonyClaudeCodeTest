@@ -573,6 +573,28 @@
             </div>
 
             <div class="control-group">
+                <h3>Backing</h3>
+                <div class="select-row">
+                    <label for="backingSelect">Source</label>
+                    <select id="backingSelect">
+                        <option value="voice">Your voice, pitch-shifted</option>
+                        <option value="piano">Piano</option>
+                        <option value="pad">Synth pad</option>
+                        <option value="voice+piano">Your voice + piano</option>
+                    </select>
+                </div>
+                <div class="select-row">
+                    <label for="backingStyleSelect">Instrument plays</label>
+                    <select id="backingStyleSelect">
+                        <option value="voices">The harmony voices</option>
+                        <option value="chords">In-key chords under you</option>
+                    </select>
+                </div>
+                <div id="backingStatus" class="key-status"></div>
+                <p class="mode-category">An instrument through the speakers feeds back far less than a shifted copy of your voice. Piano samples load from tonejs.github.io on first use.</p>
+            </div>
+
+            <div class="control-group">
                 <h3>Record &amp; Debug</h3>
                 <div class="select-row">
                     <label for="recordMode">Capture</label>

@@ -171,3 +171,14 @@ mode now requests AEC + noise suppression only. On top of that: dry monitor mute
 to voiced harmonic input, 120 Hz high-pass, 6 kHz low-pass, limiter, 0.7× gain cap, and an
 automatic notch bank (headless test: a rising 3 kHz howl is notched ~90 dB within 1 s while the
 harmony stays in tune; a sung sawtooth never triggers a notch).
+
+## Instrumental backing (2026-10-28)
+
+Setting `Backing` = voice | piano | pad | voice+piano; `Instrument plays` = harmony voices | chords.
+Chords: of the three diatonic triads containing the sung scale degree, pick by preference
+(major: I 3.0, V 2.6, IV 2.5, vi 2.0, ii 1.5, iii 1.2, vii° 0.5; minor analogous) plus +1.5 for
+keeping the previous chord; root voiced 8–19 semitones below the melody. Piano = Salamander
+samples via tonejs.github.io (network on first use); pad = fat-saw PolySynth through a 1.8 kHz
+low-pass. Notes follow the same debounced note detector, sustain while a harmonic voice is present
+and release 250 ms after it stops. Headless checks cover the chord picker, pad chords (C4 → C3 E3
+G3), a single pad voice in tune, sampled piano with voice+piano, and release on silence.

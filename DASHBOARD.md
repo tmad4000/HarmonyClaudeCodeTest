@@ -13,6 +13,7 @@ Last updated: 2026-10-28
 - Earlier lineage (all fixed-interval, superseded): `~/code/VocalHarmony` (Jan 2025 Replit), `~/code/harmonizerSonnet37`, `~/code/AudioHarmonySync2`, `~/code/HarmonyBot3` (Feb 2025), `~/code/Replit/projects/VocalHarmony-1` tarball (Sept 2025 React/Replit, published URL now 404)
 
 ## Current session (2026-10-28)
+- Backing option: piano / pad / voice+piano playing harmony voices or in-key chords (`chordForNote`), instrument note on/off follows voice presence. Headless suite extended.
 - Speaker-safe mode shipped: AEC (AGC off after measuring 12 dB → 59 dB cancellation), dry mute, harmony gate, HP/LP, limiter, automatic feedback-guard notch bank. Headphone/Speakers toggle restarts the audio graph.
 - Record & Debug: input(L)+output(R) .webm recording and JSON event log, `?record=1`, `?log=1`.
 - `claude/test/aec_realistic.py` (real mic/speakers via installed Chrome) and `verify_harmony.py` now 38/38.
@@ -25,6 +26,7 @@ Last updated: 2026-10-28
 - Added `claude/test/verify_harmony.py`: 29/29 checks pass headlessly.
 
 ## Open questions
+- **Piano vs pad vs voice as the default backing when on speakers?** Instruments are the feedback-safe choice; voice is the original intent. Default stays voice.
 - **Does speaker mode hold up with real singing at living-room volume?** Measured with a tone only. If it howls, Record (input L / output R) + Save debug log and attach; the log shows gate/notch events and the pre-guard spectrum peaks.
 - **Which engine sounds better on a real voice?** Numbers favour Signalsmith (in tune, 60 ms); only ears can judge formant/vowel quality. Open http://localhost:8080/claude/ with headphones and A/B the Engine dropdown.
 - **Auto key vs manual key as the default?** Auto needs ~1 s of singing before it commits; manual is instant. Default is Auto.
@@ -36,6 +38,7 @@ Last updated: 2026-10-28
 - Companion-agent / VA3 co-regulation idea ("sing with the user", 2026-10-28 notes) could reuse this engine.
 
 ## Recently shipped
+- 2026-10-28 — instrumental backing (piano/pad, voices or chords).
 - 2026-10-28 — speaker-safe mode (AEC without AGC, gate, feedback-guard notches), recording + debug log, realistic AEC test.
 - 2026-10-27 — key-aware harmony + Signalsmith engine + headless verification (`claude/`).
 - 2025-12-11 — just-intonation tuning for PianoDuet; codex/gemini variants.

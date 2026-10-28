@@ -248,13 +248,69 @@ def main():
         print(f"  {'OK ' if ok else 'FAIL'} {st}")
         if not ok: runner.failures.append("headphone-mode-state")
 
+        # ---- Instrumental backing
+        print("\n== backing: chord theory")
+        ch = page.evaluate("""() => { const T = window.HarmonyTheory; return {
+            c4_C: T.chordForNote(60, 0, 'major', null),
+            a4_C: T.chordForNote(69, 0, 'major', null),
+            g4_C_afterV: T.chordForNote(67, 0, 'major', 4),
+            a3_Am: T.chordForNote(57, 9, 'minor', null) }; }""")
+        exp = {"c4_C": ("C (I)", [48, 52, 55]), "a4_C": ("F (IV)", [53, 57, 60]),
+               "g4_C_afterV": ("G (V)", [55, 59, 62]), "a3_Am": ("Am (I)", [45, 48, 52])}
+        for k, (name, notes) in exp.items():
+            got = ch[k]
+            ok = got["name"] == name and got["notes"] == notes
+            print(f"  {'OK ' if ok else 'FAIL'} {k:12s} want {name} {notes} got {got['name']} {got['notes']}")
+            if not ok: runner.failures.append("chord:" + k)
+
+        print("\n== backing: pad plays in-key chords under C4 (voice shifters muted)")
+        page.goto(base + "?input=tone&freq=261.63&autostart=1&backing=pad&backingStyle=chords&key=C&scale=major&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        page.wait_for_timeout(3500)
+        b = page.evaluate("window.harmonySinger.measureBacking()")
+        ok = b["chord"] == "C (I)" and b["notes"] == ["C3", "E3", "G3"] and (b["instRms"] or 0) > 0.005 and all(v == 0 for v in b["voiceGains"].values())
+        print(f"  {'OK ' if ok else 'FAIL'} chord={b['chord']} notes={b['notes']} instRms={b['instRms'] and round(b['instRms'],3)} voiceGains={b['voiceGains']}")
+        if not ok: runner.failures.append("backing:pad-chords")
+
+        print("\n== backing: pad plays the single upper harmony voice (A3 -> C4) in tune")
+        page.goto(base + "?input=tone&freq=220&autostart=1&backing=pad&backingStyle=voices&key=C&scale=major&mode=thirds&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        page.evaluate("window.harmonySinger.setPosition('above')")
+        page.evaluate("window.harmonySinger.updateInstrumentNotes(57, true)")
+        page.wait_for_timeout(2500)
+        b = page.evaluate("window.harmonySinger.measureBacking()")
+        runner.check("backing: pad upper voice C4", b["instHz"], 60)
+        r = runner.rows[-1]
+        print(f"  {'OK ' if r[4] else 'FAIL'} notes={b['notes']} want 261.6 got {b['instHz'] and round(b['instHz'],1)} ({r[3] is not None and round(r[3])}c)")
+
+        print("\n== backing: piano (sampled) chords + voice+piano keeps the shifted voice")
+        page.goto(base + "?input=tone&freq=261.63&autostart=1&backing=voice%2Bpiano&backingStyle=chords&key=C&scale=major&engine=stretch")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=30000)
+        try:
+            page.wait_for_function("window.harmonySinger.measureBacking().notes.length > 0", timeout=20000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
+        b = page.evaluate("window.harmonySinger.measureBacking()")
+        ok = b["kind"] == "piano" and b["chord"] == "C (I)" and (b["instRms"] or 0) > 0.002 and any(v > 0 for v in b["voiceGains"].values()) and (b["instGain"] or 0) > 0
+        print(f"  {'OK ' if ok else 'FAIL'} kind={b['kind']} chord={b['chord']} notes={b['notes']} instRms={b['instRms'] and round(b['instRms'],4)} instGain={b['instGain']} voiceGains={b['voiceGains']}")
+        if not ok: runner.failures.append("backing:piano-voice+piano")
+
+        print("\n== backing: instrument releases when the voice stops")
+        page.evaluate("window.harmonySinger.testOsc.disconnect()")
+        page.wait_for_timeout(900)
+        b = page.evaluate("window.harmonySinger.measureBacking()")
+        ok = (not b["voicePresent"]) and b["notes"] == []
+        print(f"  {'OK ' if ok else 'FAIL'} voicePresent={b['voicePresent']} notes={b['notes']}")
+        if not ok: runner.failures.append("backing:release")
+
         browser.close()
 
     if server:
         server.terminate()
 
     print("\n== summary")
-    print(f"  checks: {len(runner.rows) + len(want) + 2 + 7}, failures: {len(runner.failures)}")
+    print(f"  checks: {len(runner.rows) + len(want) + 2 + 7 + 7}, failures: {len(runner.failures)}")
     for f in runner.failures:
         print("   -", f)
     if errors:

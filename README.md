@@ -15,6 +15,11 @@ A real-time vocal harmony generator that acts as your personal AI backup singer 
 > mutes your own voice in the output, only lets the harmonies sound while you are actually singing,
 > and runs a feedback guard that notches any howl it hears building up. **Record & Debug** captures
 > input (L) + output (R) as .webm and saves a JSON log of notes, shifts, key, gate and notch events.
+>
+> **Backing** picks what sings the harmony: your pitch-shifted voice (default), a sampled piano, a
+> synth pad, or voice + piano. Instruments can play the same harmony voices or in-key chords chosen
+> for the note you are singing (I/IV/V preferred, sticky), voiced below your melody, sustained while
+> you sing and released when you stop. An instrument through the speakers barely feeds back.
 
 ## Features
 

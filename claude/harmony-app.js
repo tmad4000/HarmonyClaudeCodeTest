@@ -80,6 +80,18 @@ const GUARD = {
     analyseEveryFrames: 6  // ~100 ms at 60 fps
 };
 
+// Instrumental backing
+const PIANO_URLS = {};
+['A0','C1','D#1','F#1','A1','C2','D#2','F#2','A2','C3','D#3','F#3','A3','C4','D#4','F#4','A4','C5','D#5','F#5','A5','C6','D#6','F#6','A6','C7','D#7','F#7','A7','C8']
+    .forEach(n => { PIANO_URLS[n] = n.replace('#', 's') + '.mp3'; });
+const PIANO_BASE_URL = 'https://tonejs.github.io/audio/salamander/';
+// Chord preference by root scale degree (0 = tonic). Higher = chosen more readily.
+const CHORD_PREF = {
+    major: [3.0, 1.5, 1.2, 2.5, 2.6, 2.0, 0.5],
+    minor: [3.0, 0.6, 1.5, 2.2, 2.3, 2.2, 1.5]
+};
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+
 // ---------- Pure music-theory helpers (exposed on window.HarmonyTheory for tests) ----------
 
 function midiToName(midi) {
@@ -123,6 +135,44 @@ function harmonyShiftInKey(inputMidi, rootPc, scale, degreeOffset) {
     const tIdx = ((target % n) + n) % n;
     const targetMidi = snapped - scale[idx] + scale[tIdx] + 12 * oct;
     return targetMidi - inputMidi;
+}
+
+/**
+ * Pick the diatonic triad to play under a sung note. Returns {rootDeg, notes:[midi], name}.
+ * Candidates are the three triads of the key that contain the note; weighted by CHORD_PREF with
+ * a bonus for keeping the previous chord (less churn). Notes are voiced below the melody.
+ */
+function chordForNote(inputMidi, rootPc, scaleType, prevRootDeg) {
+    const scale = SCALES[scaleType] || SCALES.major;
+    if (scale.length !== 7) return null;
+    const pc = (((inputMidi - rootPc) % 12) + 12) % 12;
+    let deg = scale.indexOf(pc);
+    if (deg < 0) {
+        let best = 0, bestDist = 99;
+        for (let i = 0; i < 7; i++) {
+            const raw = Math.abs(scale[i] - pc);
+            const d = Math.min(raw, 12 - raw);
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+        deg = best;
+    }
+    const pref = CHORD_PREF[scaleType] || CHORD_PREF.major;
+    let bestDeg = deg, bestScore = -1;
+    for (const off of [0, -2, -4]) {
+        const r = ((deg + off) % 7 + 7) % 7;
+        const score = pref[r] + (r === prevRootDeg ? 1.5 : 0);
+        if (score > bestScore) { bestScore = score; bestDeg = r; }
+    }
+    // voice the triad with its root between 8 and 19 semitones below the melody
+    const rootPcAbs = (rootPc + scale[bestDeg]) % 12;
+    let rootMidi = inputMidi - 8;
+    while ((((rootMidi % 12) + 12) % 12) !== rootPcAbs) rootMidi--;
+    const third = rootMidi + ((scale[(bestDeg + 2) % 7] - scale[bestDeg] + 12) % 12);
+    const fifth = rootMidi + ((scale[(bestDeg + 4) % 7] - scale[bestDeg] + 12) % 12);
+    const quality = ((scale[(bestDeg + 2) % 7] - scale[bestDeg] + 12) % 12) === 4 ? '' : 'm';
+    const dim = ((scale[(bestDeg + 4) % 7] - scale[bestDeg] + 12) % 12) === 6;
+    const name = `${NOTE_NAMES[rootPcAbs]}${dim ? 'dim' : quality} (${ROMAN[bestDeg]})`;
+    return { rootDeg: bestDeg, notes: [rootMidi, third, fifth], name };
 }
 
 /** Correlate a 12-bin pitch-class histogram against all keys of the allowed types. */
@@ -261,6 +311,16 @@ class HarmonySinger {
         this.chorusAmount = 0.3;
         this.smoothing = 0.5;
         this.speakerMode = this.params.get('speaker') === '1';
+        this.backing = ['voice', 'piano', 'pad', 'voice+piano'].includes(this.params.get('backing')) ? this.params.get('backing') : 'voice';
+        this.backingStyle = this.params.get('backingStyle') === 'chords' ? 'chords' : 'voices';
+        this.instruments = {};        // kind -> Tone instrument
+        this.instGain = null;
+        this.instTap = null;
+        this.instNotes = [];          // midi notes currently held by the instrument
+        this.currentChord = null;
+        this.prevChordDeg = null;
+        this.voicePresent = false;
+        this.lastVoiceSeen = 0;
         this.harmonyPosition = 'both';
         this.choirVoices = { soprano: true, alto: true, tenor: true, bass: true };
 
@@ -333,6 +393,7 @@ class HarmonySinger {
             detectedKey: this.detectedKey, speakerMode: this.speakerMode, harmonyVolume: this.harmonyVolume,
             dryVolume: this.dryVolume, reverbAmount: this.reverbAmount, chorusAmount: this.chorusAmount,
             smoothing: this.smoothing, harmonyPosition: this.harmonyPosition, choirVoices: { ...this.choirVoices },
+            backing: this.backing, backingStyle: this.backingStyle,
             sampleRate: this.audioContext ? this.audioContext.sampleRate : null,
             notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz))
         };
@@ -441,6 +502,16 @@ class HarmonySinger {
             engineSelect.value = this.engine;
             engineSelect.addEventListener('change', (e) => this.setEngine(e.target.value));
         }
+        const backingSelect = document.getElementById('backingSelect');
+        if (backingSelect) {
+            backingSelect.value = this.backing;
+            backingSelect.addEventListener('change', (e) => this.setBacking(e.target.value));
+        }
+        const backingStyleSelect = document.getElementById('backingStyleSelect');
+        if (backingStyleSelect) {
+            backingStyleSelect.value = this.backingStyle;
+            backingStyleSelect.addEventListener('change', (e) => this.setBackingStyle(e.target.value));
+        }
         const recordBtn = document.getElementById('recordBtn');
         if (recordBtn) {
             recordBtn.addEventListener('click', () => {
@@ -531,6 +602,115 @@ class HarmonySinger {
         if (sel && sel.value !== engine) sel.value = engine;
         this.logEvent('engine', { engine });
         this.restartIfRunning();
+    }
+
+    instrumentKind() {
+        return this.backing === 'pad' ? 'pad' : (this.backing === 'piano' || this.backing === 'voice+piano') ? 'piano' : null;
+    }
+
+    async setBacking(value) {
+        if (!['voice', 'piano', 'pad', 'voice+piano'].includes(value)) return;
+        const prevKind = this.instrumentKind();
+        this.backing = value;
+        const sel = document.getElementById('backingSelect');
+        if (sel && sel.value !== value) sel.value = value;
+        this.logEvent('backing', { backing: value });
+        if (this.isRunning) {
+            if (prevKind && prevKind !== this.instrumentKind()) this.releaseInstrument(prevKind);
+            if (this.instrumentKind()) {
+                await this.ensureInstrument(this.instrumentKind());
+                if (this.stableMidi !== null && this.voicePresent) this.updateInstrumentNotes(this.stableMidi, true);
+            }
+            this.updateGains();
+        }
+        this.renderBacking();
+    }
+
+    setBackingStyle(value) {
+        this.backingStyle = value === 'chords' ? 'chords' : 'voices';
+        const sel = document.getElementById('backingStyleSelect');
+        if (sel && sel.value !== this.backingStyle) sel.value = this.backingStyle;
+        this.logEvent('backing-style', { style: this.backingStyle });
+        this.prevChordDeg = null;
+        if (this.isRunning && this.stableMidi !== null && this.voicePresent) this.updateInstrumentNotes(this.stableMidi, true);
+        this.renderBacking();
+    }
+
+    renderBacking() {
+        const el = document.getElementById('backingStatus');
+        if (!el) return;
+        const kind = this.instrumentKind();
+        if (!kind) { el.textContent = 'Harmonies are pitch-shifted copies of your voice.'; return; }
+        const what = this.backingStyle === 'chords' ? 'in-key chords under your melody' : 'the harmony voices';
+        const held = this.instNotes.length ? ` · playing ${this.instNotes.map(midiToName).join(' ')}${this.currentChord ? ' = ' + this.currentChord.name : ''}` : '';
+        el.textContent = `${kind === 'pad' ? 'Pad' : 'Piano'} plays ${what}${this.backing === 'voice+piano' ? ', plus your shifted voice' : ''}${held}`;
+    }
+
+    async ensureInstrument(kind) {
+        if (this.instruments[kind]) return this.instruments[kind];
+        let inst;
+        if (kind === 'piano') {
+            inst = new Tone.Sampler({ urls: PIANO_URLS, baseUrl: PIANO_BASE_URL, release: 1.2, attack: 0.005 });
+            await Tone.loaded();
+        } else {
+            inst = new Tone.PolySynth(Tone.Synth, {
+                maxPolyphony: 8,
+                oscillator: { type: 'fatsawtooth', count: 3, spread: 18 },
+                envelope: { attack: 0.25, decay: 0.3, sustain: 0.75, release: 1.0 }
+            });
+            inst.volume.value = -10;
+        }
+        const filt = new Tone.Filter({ type: 'lowpass', frequency: kind === 'pad' ? 1800 : 6000, rolloff: -12 });
+        inst.connect(filt);
+        filt.connect(this.instGain);
+        this.instruments[kind] = inst;
+        this.instruments[kind + '_filter'] = filt;
+        this.logEvent('instrument-ready', { kind });
+        return inst;
+    }
+
+    /** Decide what the instrument should hold for the sung note and apply note on/offs. */
+    updateInstrumentNotes(inputMidi, force = false) {
+        const kind = this.instrumentKind();
+        if (!kind || !this.instruments[kind]) return;
+        const key = this.effectiveKey();
+        let notes;
+        if (this.backingStyle === 'chords' && key.type !== 'chromatic') {
+            const chord = chordForNote(inputMidi, key.root, key.type, this.prevChordDeg);
+            this.currentChord = chord;
+            this.prevChordDeg = chord.rootDeg;
+            notes = chord.notes;
+        } else {
+            this.currentChord = null;
+            const four = FOUR_VOICE_MODES.includes(this.currentMode);
+            notes = this.voiceNames().filter(v => {
+                if (four) return this.choirVoices[v];
+                if (this.harmonyPosition === 'above' && v === 'lower') return false;
+                if (this.harmonyPosition === 'below' && v === 'upper') return false;
+                return true;
+            }).map(v => this.voiceTargets[v]).filter(m => m !== undefined && m !== inputMidi || this.currentMode === 'unison');
+        }
+        notes = Array.from(new Set(notes)).sort((a, b) => a - b);
+        const inst = this.instruments[kind];
+        const now = Tone.now();
+        const off = this.instNotes.filter(n => !notes.includes(n));
+        const on = notes.filter(n => !this.instNotes.includes(n) || force);
+        if (off.length) inst.triggerRelease(off.map(midiToName), now);
+        if (on.length) inst.triggerAttack(on.map(midiToName), now, 0.7);
+        this.instNotes = notes;
+        this.logEvent('instrument', { kind, notes: notes.map(midiToName), chord: this.currentChord ? this.currentChord.name : null });
+        this.renderBacking();
+    }
+
+    releaseInstrument(kind) {
+        const k = kind || this.instrumentKind();
+        const inst = k && this.instruments[k];
+        if (inst && this.instNotes.length) {
+            try { inst.triggerRelease(this.instNotes.map(midiToName), Tone.now()); } catch (e) { /* ignore */ }
+        }
+        this.instNotes = [];
+        this.currentChord = null;
+        this.renderBacking();
     }
 
     restartIfRunning() {
@@ -791,6 +971,15 @@ class HarmonySinger {
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
             this.gateGain = new Tone.Gain(1);
             this.lpFilter = new Tone.Filter({ type: 'lowpass', frequency: this.speakerMode ? 6000 : 20000, rolloff: -12 });
+            this.instGain = new Tone.Gain(0);
+            this.instTap = ctx.createAnalyser();
+            this.instTap.fftSize = 4096;
+            this.instGain.connect(this.instTap);
+            this.instGain.connect(this.chorus);
+            this.instruments = {};
+            this.instNotes = [];
+            this.currentChord = null;
+            this.prevChordDeg = null;
 
             // dry: mic -> dryGain -> chorus -> reverb -> master -> limiter -> out
             this.mic.connect(this.dryGain);
@@ -817,6 +1006,10 @@ class HarmonySinger {
                     throw engineErr;
                 }
             }
+
+            if (this.instrumentKind()) await this.ensureInstrument(this.instrumentKind());
+            this.updateGains();
+            this.renderBacking();
 
             this.gateOpen = !this.speakerMode;
             if (this.speakerMode) this.gateGain.gain.value = 0;
@@ -901,6 +1094,8 @@ class HarmonySinger {
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
         const cap = this.speakerMode ? 0.7 : 1;                       // less gain before feedback
         const duck = (this.speakerMode && performance.now() < this.duckUntil) ? 0.5 : 1;
+        const voiceOn = (this.backing === 'voice' || this.backing === 'voice+piano') ? 1 : 0;
+        if (this.instGain) this.instGain.gain.value = this.instrumentKind() ? this.harmonyVolume * 0.9 * (this.speakerMode ? 0.85 : 1) : 0;
         Object.keys(this.gains).forEach(key => {
             let level;
             if (four) {
@@ -911,7 +1106,7 @@ class HarmonySinger {
                 if (this.harmonyPosition === 'below' && key === 'upper') play = false;
                 level = play ? this.harmonyVolume * 0.6 : 0;
             }
-            this.gains[key].gain.value = level * cap * duck;
+            this.gains[key].gain.value = level * cap * duck * voiceOn;
         });
     }
 
@@ -944,6 +1139,7 @@ class HarmonySinger {
             shifts[voice] = shift;
         }
         this.logEvent('note', { input: midiToName(inputMidi), midi: inputMidi, key: `${NOTE_NAMES[key.root]} ${key.type}`, shifts });
+        if (this.voicePresent) this.updateInstrumentNotes(inputMidi);
     }
 
     stop() {
@@ -965,10 +1161,16 @@ class HarmonySinger {
         this.notchNodes = [];
         this.notches = [];
         this.disposeVoices();
-        [this.mic, this.gateGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser]
+        Object.values(this.instruments).forEach(i => { try { if (i.releaseAll) i.releaseAll(); i.dispose(); } catch (e) { /* ignore */ } });
+        this.instruments = {};
+        this.instNotes = [];
+        this.currentChord = null;
+        this.voicePresent = false;
+        if (this.instTap) { try { this.instTap.disconnect(); } catch (e) { /* ignore */ } this.instTap = null; }
+        [this.mic, this.gateGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
             .forEach(n => { if (n) { try { n.dispose(); } catch (e) { /* ignore */ } } });
         this.mic = null; this.gateGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
-        this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null;
+        this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
         this.smoothedPitch = null;
         this.stableMidi = null;
         this.guardCandidates = [];
@@ -1016,6 +1218,18 @@ class HarmonySinger {
             } else {
                 this.candidateFrames = 0;
                 if (this.lastPitch !== null) document.getElementById('currentNote').classList.remove('singing');
+            }
+
+            // Voice presence (both modes) drives instrument note on/off.
+            if (voiced && this.harmonicVoice) this.lastVoiceSeen = now;
+            const present = now - this.lastVoiceSeen < 250;
+            if (present !== this.voicePresent) {
+                this.voicePresent = present;
+                if (present) {
+                    if (this.stableMidi !== null) this.updateInstrumentNotes(this.stableMidi, true);
+                } else {
+                    this.releaseInstrument();
+                }
             }
 
             // Harmony gate (speaker mode): only sing along while a real voice is present.
@@ -1210,6 +1424,25 @@ class HarmonySinger {
         };
     }
 
+    /** What the instrument is holding and what is coming out of it. */
+    measureBacking() {
+        const out = { backing: this.backing, style: this.backingStyle, kind: this.instrumentKind(),
+            notes: this.instNotes.map(midiToName), midi: this.instNotes.slice(),
+            chord: this.currentChord ? this.currentChord.name : null, voicePresent: this.voicePresent,
+            instGain: this.instGain ? this.instGain.gain.value : null,
+            voiceGains: Object.fromEntries(Object.entries(this.gains).map(([k, g]) => [k, g.gain.value])),
+            instRms: null, instHz: null };
+        if (this.instTap) {
+            const buf = new Float32Array(this.instTap.fftSize);
+            this.instTap.getFloatTimeDomainData(buf);
+            let rms = 0;
+            for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+            out.instRms = Math.sqrt(rms / buf.length);
+            out.instHz = yinPitch(buf, this.audioContext.sampleRate, 0.3);
+        }
+        return out;
+    }
+
     async engineLatency() {
         if (this.engine === 'stretch') {
             const any = Object.values(this.pitchShifters)[0];
@@ -1250,7 +1483,7 @@ class HarmonySinger {
     }
 }
 
-window.HarmonyTheory = { harmonyShiftInKey, detectKeyFromHistogram, yinPitch, findSpectralPeaks, midiToName, freqToMidi, midiToFreq, SCALES, DEGREE_MODES, SEMITONE_MODES, GUARD };
+window.HarmonyTheory = { harmonyShiftInKey, chordForNote, detectKeyFromHistogram, yinPitch, findSpectralPeaks, midiToName, freqToMidi, midiToFreq, SCALES, DEGREE_MODES, SEMITONE_MODES, GUARD };
 
 window.addEventListener('DOMContentLoaded', () => {
     window.harmonySinger = new HarmonySinger();
