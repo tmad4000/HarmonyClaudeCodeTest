@@ -1,0 +1,216 @@
+#!/usr/bin/env python3
+"""
+Headless verification for Harmony Singer (claude/).
+
+Feeds a synthetic sawtooth "voice" instead of a microphone, then reads the pitch of
+every harmony voice at its own output tap and checks it against the diatonic target.
+No microphone, speakers, or human needed.
+
+Usage:
+    python3 test/verify_harmony.py            # serves ../ on a free port itself
+    PORT=8471 python3 test/verify_harmony.py  # reuse an already-running server rooted at repo root
+
+Requires the pipx/pip `playwright` package with a Chromium build installed.
+"""
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parent.parent  # HarmonyClaudeCodeTest/
+A4 = 440.0
+
+
+def midi_to_freq(m):
+    return A4 * 2 ** ((m - 69) / 12)
+
+
+def free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def cents(a, b):
+    import math
+    return 1200 * math.log2(a / b)
+
+
+class Runner:
+    def __init__(self):
+        self.failures = []
+        self.rows = []
+
+    def check(self, label, got_hz, want_midi, tol_cents=35):
+        want_hz = midi_to_freq(want_midi)
+        if got_hz is None:
+            ok = False
+            diff = None
+        else:
+            diff = cents(got_hz, want_hz)
+            ok = abs(diff) <= tol_cents
+        self.rows.append((label, want_hz, got_hz, diff, ok))
+        if not ok:
+            self.failures.append(label)
+        return ok
+
+
+def run(page, runner, url, label, expect, freq=None, settle=2.5, key_change=None, retries=3):
+    """Load url, wait for audio to settle, measure, compare expected {voice: midi}."""
+    page.goto(url)
+    page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+    if key_change:
+        page.wait_for_timeout(800)
+        page.evaluate(f"window.harmonySinger.setKey({json.dumps(key_change)})")
+    if freq:
+        page.evaluate(f"window.harmonySinger.setTestFrequency({freq})")
+    page.wait_for_timeout(int(settle * 1000))
+    best = None
+    for _ in range(retries):
+        m = page.evaluate("window.harmonySinger.measureVoices()")
+        best = m
+        if all(m["voices"].get(v, {}).get("hz") for v in expect):
+            break
+        page.wait_for_timeout(500)
+    m = best
+    inp = m.get("input") or {}
+    print(f"\n== {label}  (engine={m['engine']}, key={m['key']}, input={inp.get('note')} {inp.get('hz') and round(inp['hz'],1)} Hz)")
+    for voice, want in expect.items():
+        v = m["voices"].get(voice, {})
+        runner.check(f"{label}: {voice}", v.get("hz"), want)
+        r = runner.rows[-1]
+        status = "OK " if r[4] else "FAIL"
+        got = f"{r[2]:.1f} Hz" if r[2] else "no pitch"
+        d = f"{r[3]:+.0f}c" if r[3] is not None else "-"
+        print(f"  {status} {voice:8s} want {r[1]:.1f} Hz ({v.get('targetNote')}) got {got} {d}  shift={v.get('shift')} rms={v.get('rms') and round(v['rms'],3)}")
+    lat = page.evaluate("window.harmonySinger.engineLatency()")
+    if lat is not None:
+        print(f"  engine-reported latency: {lat*1000:.0f} ms")
+    return m
+
+
+def main():
+    port = os.environ.get("PORT")
+    server = None
+    if not port:
+        port = str(free_port())
+        server = subprocess.Popen(
+            [sys.executable, "-m", "http.server", port, "--bind", "127.0.0.1"],
+            cwd=REPO_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.8)
+    base = f"http://127.0.0.1:{port}/claude/index.html"
+    runner = Runner()
+    errors = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
+                  "--autoplay-policy=no-user-gesture-required"],
+        )
+        ctx = browser.new_context(permissions=["microphone"])
+        page = ctx.new_page()
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+
+        # Pure theory unit checks (no audio)
+        page.goto(base + "?input=tone")
+        theory = page.evaluate("""() => {
+            const T = window.HarmonyTheory;
+            return {
+              a3_up3_C:  T.harmonyShiftInKey(57, 0, T.SCALES.major, 2),   // A3 in C major -> C4 (+3)
+              a3_dn3_C:  T.harmonyShiftInKey(57, 0, T.SCALES.major, -2),  // -> F3 (-4)
+              a3_up3_D:  T.harmonyShiftInKey(57, 2, T.SCALES.major, 2),   // A3 in D major -> C#4 (+4)
+              c4_up3_C:  T.harmonyShiftInKey(60, 0, T.SCALES.major, 2),   // C4 -> E4 (+4)
+              e4_up3_C:  T.harmonyShiftInKey(64, 0, T.SCALES.major, 2),   // E4 -> G4 (+3)
+              cs4_up3_C: T.harmonyShiftInKey(61, 0, T.SCALES.major, 2),   // C#4 (out of key) snaps to C4 -> E4 (+3)
+              a3_up3_Am: T.harmonyShiftInKey(57, 9, T.SCALES.minor, 2),   // A3 in A minor -> C4 (+3)
+              a3_up5_C:  T.harmonyShiftInKey(57, 0, T.SCALES.major, 4),   // -> E4 (+7)
+              b3_up5_C:  T.harmonyShiftInKey(59, 0, T.SCALES.major, 4),   // B3 -> F4 (+6, diminished 5th in key)
+              a3_oct_C:  T.harmonyShiftInKey(57, 0, T.SCALES.major, 7),   // +12
+            };
+        }""")
+        want = dict(a3_up3_C=3, a3_dn3_C=-4, a3_up3_D=4, c4_up3_C=4, e4_up3_C=3, cs4_up3_C=3, a3_up3_Am=3, a3_up5_C=7, b3_up5_C=6, a3_oct_C=12)
+        print("== theory unit checks")
+        for k, w in want.items():
+            ok = theory[k] == w
+            print(f"  {'OK ' if ok else 'FAIL'} {k:10s} want {w:+d} got {theory[k]:+d}")
+            if not ok:
+                runner.failures.append("theory:" + k)
+
+        # Krumhansl key detection on a C-major histogram
+        kd = page.evaluate("""() => {
+            const hist = [10,0,6,0,7,5,0,8,0,6,0,4];
+            const r = window.HarmonyTheory.detectKeyFromHistogram(hist, ['major','minor']);
+            return r.best;
+        }""")
+        ok = kd["root"] == 0 and kd["type"] == "major"
+        print(f"  {'OK ' if ok else 'FAIL'} key-detect C-major histogram -> root={kd['root']} type={kd['type']} score={kd['score']:.2f}")
+        if not ok:
+            runner.failures.append("theory:keydetect")
+
+        # Live audio checks. A3 = 220 Hz = midi 57.
+        q = "?input=tone&freq=220&autostart=1&mode=thirds&scale=major"
+        run(page, runner, base + q + "&key=C&engine=granular", "granular thirds, C major, A3",
+            {"upper": 60, "lower": 53})
+        run(page, runner, base + q + "&key=D&engine=granular", "granular thirds, D major, A3",
+            {"upper": 61, "lower": 54})
+        run(page, runner, base + "?input=tone&freq=220&autostart=1&mode=thirds&scale=chromatic&key=C&engine=granular",
+            "granular thirds, chromatic, A3", {"upper": 61, "lower": 54})
+        run(page, runner, base + q + "&key=C&engine=granular", "granular key switch C->D at runtime (A3)",
+            {"upper": 61, "lower": 54}, key_change="D")
+        run(page, runner, base + "?input=tone&freq=261.63&autostart=1&mode=choir&scale=major&key=C&engine=granular",
+            "granular Classic Choir, C major, C4", {"soprano": 72, "alto": 64, "tenor": 57, "bass": 48})
+        run(page, runner, base + q + "&key=C&engine=stretch", "stretch thirds, C major, A3",
+            {"upper": 60, "lower": 53}, settle=3.5)
+        run(page, runner, base + q + "&key=D&engine=stretch", "stretch thirds, D major, A3",
+            {"upper": 61, "lower": 54}, settle=3.5)
+
+        # Auto key detection: play a C-major scale, expect root C.
+        page.goto(base + "?input=tone&freq=261.63&autostart=1&mode=thirds&scale=major&key=auto&engine=granular")
+        page.wait_for_function("window.harmonySinger && window.harmonySinger.isRunning", timeout=15000)
+        for m in [60, 62, 64, 65, 67, 69, 71, 72, 67, 64, 60]:
+            page.evaluate(f"window.harmonySinger.setTestFrequency({midi_to_freq(m)})")
+            page.wait_for_timeout(450)
+        page.wait_for_timeout(700)
+        m = page.evaluate("window.harmonySinger.measureVoices()")
+        dk = m.get("detectedKey")
+        ok = bool(dk) and dk["root"] == 0 and dk["type"] == "major"
+        print(f"\n== auto key after C-major scale: {dk}")
+        print(f"  {'OK ' if ok else 'FAIL'} detected root 0 (C) major")
+        if not ok:
+            runner.failures.append("auto-key")
+        # And the harmony on the final C4 should be E4 (+4) in detected C major
+        page.wait_for_timeout(1200)
+        m = page.evaluate("window.harmonySinger.measureVoices()")
+        runner.check("auto key: upper third on C4 -> E4", m["voices"]["upper"]["hz"], 64)
+        r = runner.rows[-1]
+        print(f"  {'OK ' if r[4] else 'FAIL'} upper want {r[1]:.1f} got {r[2] and round(r[2],1)} ({r[3] and round(r[3])}c)")
+
+        browser.close()
+
+    if server:
+        server.terminate()
+
+    print("\n== summary")
+    print(f"  checks: {len(runner.rows) + len(want) + 2}, failures: {len(runner.failures)}")
+    for f in runner.failures:
+        print("   -", f)
+    if errors:
+        print("  page errors/console errors:")
+        for e in errors[:10]:
+            print("   !", e[:200])
+    sys.exit(1 if runner.failures else 0)
+
+
+if __name__ == "__main__":
+    main()

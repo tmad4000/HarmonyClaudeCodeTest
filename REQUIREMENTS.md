@@ -120,10 +120,10 @@ Microphone Input
 - [x] Start/stop control
 
 ### Enhanced Features
-- [ ] Multiple harmony voices (choir mode)
+- [x] Multiple harmony voices (choir mode) — `claude/`, 2025-12-08
 - [ ] Stereo panning for choir spread
-- [ ] Key/scale detection for smarter harmonies
-- [ ] Latency compensation
+- [x] Key/scale detection for smarter harmonies — `claude/`, 2026-10-27 (diatonic degree intervals + Krumhansl-Kessler auto key)
+- [~] Latency: Signalsmith Stretch engine at 60 ms block (measured 60 ms) vs 100 ms granular — 2026-10-27
 - [ ] Recording/playback
 
 ---
@@ -138,3 +138,19 @@ Microphone Input
 - [SoundTouchJS](https://github.com/cutterbl/SoundTouchJS)
 - [Pitchfinder](https://github.com/peterkhayes/pitchfinder)
 - [Aubio](https://aubio.org/)
+
+---
+
+## Verification (2026-10-27)
+
+`claude/test/verify_harmony.py` drives the app headlessly with a synthetic sawtooth "voice" and reads
+the pitch at each harmony voice's output tap. 29 checks pass: theory unit tests, C/D major, chromatic,
+runtime key switch, Classic Choir SATB, both engines, and auto key detection over a sung C-major scale.
+
+| Engine | Upper 3rd error | Lower 3rd error | Reported latency |
+|---|---|---|---|
+| Signalsmith Stretch (default) | +3 to +4 cents | 0 to +2 cents | 60 ms |
+| Tone.js PitchShift (granular) | +5 to +6 cents | −28 to −34 cents | 100 ms |
+
+Tone.js `PitchShift` is audibly flat on downward shifts, which is one reason every earlier attempt
+(VocalHarmony Jan 2025, harmonizerSonnet37, AudioHarmonySync2, VocalHarmony-1 Sept 2025) sounded off.

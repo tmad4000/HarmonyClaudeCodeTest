@@ -2,6 +2,14 @@
 
 A real-time vocal harmony generator that acts as your personal AI backup singer or choir. Sing into your microphone and hear harmonies generated in real-time!
 
+> **Current version: [`claude/`](claude/)** — key-aware harmonies (diatonic thirds/fifths/sixths and
+> 4-voice choir voicings computed from the detected note inside the selected or auto-detected key),
+> formant-preserving Signalsmith Stretch engine (Tone.js granular as fallback), speaker-mode echo
+> cancellation, and a mic-free self-test. Run `python3 -m http.server 8080` here and open
+> http://localhost:8080/claude/ . Verify without a microphone: `python3 claude/test/verify_harmony.py`
+> (needs the `playwright` Python package with Chromium). The root `index.html`/`app.js` below is the
+> original 2025-12-08 prototype and is kept for reference.
+
 ## Features
 
 - **Real-time pitch detection** using autocorrelation algorithm

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Harmony Singer - AI Backup Vocals</title>
     <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
-    <script src="https://unpkg.com/pitchfinder@2.3.0/lib/index.js"></script>
+    <script src="vendor/SignalsmithStretch.js"></script>
     <style>
         * {
             margin: 0;
@@ -412,6 +412,10 @@
         .mode-category:first-of-type {
             margin-top: 0;
         }
+        .select-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+        .select-row label { font-size: 0.85rem; opacity: 0.8; }
+        .select-row select { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: inherit; font-size: 0.95rem; }
+        .key-status { margin-top: 8px; font-size: 0.85rem; opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -540,6 +544,31 @@
                     <button class="mode-btn scale-btn" data-scale="minor">Minor</button>
                     <button class="mode-btn scale-btn" data-scale="chromatic">Chromatic</button>
                 </div>
+                <div class="select-row">
+                    <label for="keyRoot">Root</label>
+                    <select id="keyRoot">
+                        <option value="auto">Auto-detect</option>
+                        <option value="C">C</option><option value="C#">C# / Db</option>
+                        <option value="D">D</option><option value="D#">D# / Eb</option>
+                        <option value="E">E</option><option value="F">F</option>
+                        <option value="F#">F# / Gb</option><option value="G">G</option>
+                        <option value="G#">G# / Ab</option><option value="A">A</option>
+                        <option value="A#">A# / Bb</option><option value="B">B</option>
+                    </select>
+                </div>
+                <div id="keyStatus" class="key-status">Auto key: listening…</div>
+            </div>
+
+            <div class="control-group">
+                <h3>Voice Engine</h3>
+                <div class="select-row">
+                    <label for="engineSelect">Engine</label>
+                    <select id="engineSelect">
+                        <option value="granular">Granular (Tone.js)</option>
+                        <option value="stretch">Signalsmith Stretch (formant-preserving)</option>
+                    </select>
+                </div>
+                <p class="mode-category">Stretch keeps your vowel colour when shifting; granular is lighter on CPU.</p>
             </div>
 
             <div class="control-group">
@@ -607,6 +636,7 @@
                 <li>Select harmony position: Above, Below, or Both for full harmonies</li>
                 <li>Adjust the harmony volume to blend with your voice</li>
                 <li>Use reverb to add space and polish to the sound</li>
+                <li>Pick the song's key (or leave Root on Auto-detect) so harmonies stay in key; Chromatic gives fixed parallel intervals</li>
                 <li>Try different scales - Major sounds happy, Minor sounds emotional</li>
             </ul>
         </div>
