@@ -3,6 +3,6 @@
   "scenarios": 11,
   "no_autoplay": true,
   "mobile_overflow": false,
-  "audio_endpoints": 19,
+  "audio_endpoints": 25,
   "console_errors": []
 }

@@ -66,7 +66,17 @@ def calibrate(h):
     return fitted, db(rms(actual) / rms(actual - predicted))
 
 
-def run_case(name, kind, aec, voice, model, seconds=8, safety=True):
+def run_case(
+    name,
+    kind,
+    aec,
+    voice,
+    model,
+    seconds=8,
+    safety=True,
+    profile="original",
+    oracle=False,
+):
     n = int(np.ceil(seconds * SR / HOP)) * HOP
     near = np.zeros(n, dtype=np.float32)
     near[SR : SR + len(voice)] = voice
@@ -87,14 +97,19 @@ def run_case(name, kind, aec, voice, model, seconds=8, safety=True):
     h = room_impulse()
     if name == "high_loop_gain":
         h = h * 4
-    if name == "singer_only":
+    if name == "singer_only" or oracle:
         h[:] = 0
         fitted = h.copy()
         cal_erle = None
     else:
         fitted, cal_erle = calibrate(h)
     engine = Engine(
-        kind, fitted if aec else None, shift=shift, model=model, safety=safety
+        kind,
+        fitted if aec else None,
+        shift=shift,
+        model=model,
+        safety=safety,
+        profile=profile,
     )
     out = np.zeros(n, dtype=np.float32)
     raw = np.zeros(n, dtype=np.float32)
@@ -148,6 +163,8 @@ def run_case(name, kind, aec, voice, model, seconds=8, safety=True):
     error = clean - near
     metrics = {
         "scenario": name,
+        "stream_profile": profile,
+        "oracle_clean_input": oracle,
         "engine": kind,
         "aec": aec,
         "safety_enabled": safety,
@@ -175,6 +192,10 @@ def run_case(name, kind, aec, voice, model, seconds=8, safety=True):
     stem = f"{name}_{kind}_{'reference' if aec else 'noaec'}" + (
         "" if safety else "_unguarded"
     )
+    if profile != "original":
+        stem += "_" + profile
+    if oracle:
+        stem += "_oracle"
     for label, data in [("output", out), ("clean", clean), ("mic", raw)]:
         sf.write(ROOT / f"artifacts/{stem}_{label}.wav", data, SR, subtype="PCM_16")
     metrics["audio_stem"] = stem

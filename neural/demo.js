@@ -201,3 +201,44 @@ function render() {
       "Quality benchmark not yet generated; run benchmark.py for measured latency and singing A/B clips.";
   }
 })();
+
+(async () => {
+  try {
+    const q = await (await fetch("artifacts/responsiveness-sweep.json")).json();
+    $("#responsive-note").textContent =
+      "Measured source-to-worker-ready p95: original 171–175 ms; responsive 103–110 ms in this M4 sweep. Device/playout delay is additional. Clips are source-aligned for timbre comparison, not a simulated monitoring delay. Smaller context changes the sound; listening acceptance remains open.";
+    for (const number of [1, 10, 20]) {
+      const section = document.createElement("section");
+      section.className = "quality-row";
+      const title = document.createElement("h2");
+      title.textContent =
+        "vocadito_" + number + " · same singer, same +4 semitones";
+      section.append(title);
+      const items = document.createElement("div");
+      items.className = "quality-items";
+      for (const profile of ["original", "responsive"]) {
+        const r = q.rows.find(
+          (r) => r.fixture === number && r.profile === profile,
+        );
+        const label = document.createElement("label");
+        label.textContent =
+          profile +
+          " · " +
+          Math.round(r.serialized_ready_delay_p95_ms) +
+          " ms worker-ready p95";
+        const a = document.createElement("audio");
+        a.controls = true;
+        a.preload = "metadata";
+        a.volume = +$("#volume").value;
+        a.src = `artifacts/responsive_${number}_${profile}.wav`;
+        label.append(a);
+        items.append(label);
+      }
+      section.append(items);
+      $("#responsive-clips").append(section);
+    }
+  } catch (e) {
+    $("#responsive-note").textContent =
+      "Run sweep.py to generate the response-time comparison.";
+  }
+})();

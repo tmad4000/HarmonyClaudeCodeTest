@@ -113,3 +113,28 @@ buffering + measured p95 compute + one callback; it is not measured hardware
 round-trip latency. RTF below 1 is necessary but does not guarantee deadline
 success; p99 spikes and callback scheduling still matter. No gate masks a failed
 separation in this experiment.
+
+## Responsiveness continuation: a rendering lane for the musical partner
+
+The separate third-view Astra owns the stateful musical controller. This engine
+now exposes a documented [renderer boundary](research/RENDERER-CONTRACT.md) for
+sample-timestamped target pitch and unitless waveform gain. No controller policy
+or authored weights were duplicated, and the two demos are not yet integrated.
+
+Try `--profile responsive` with either native headphone or speaker mode to use
+the measured smaller-window option. `original` remains the default. In the same
+M4 sweep, responsive p95 source-to-worker-ready delay was 103–110 ms versus
+171–175 ms for original. These exclude device/playout delay and do not replace
+physical latency measurement. Pitch metrics were similar; spectral difference
+increased, so listen to both before choosing a default.
+
+```bash
+neural/.venv/bin/python neural/live.py --headphones --profile responsive --key C --gain 0.25 --seconds 60
+neural/.venv/bin/python neural/sweep.py
+neural/.venv/bin/python neural/continuity.py
+```
+
+`sweep.py` reports measured scheduling backlog as well as throughput and pitch.
+`continuity.py` requires audible output, level preservation and loop stability
+together; muting cannot pass as a musical success. New evidence lives in
+`artifacts/responsiveness-sweep.json` and `artifacts/continuity.json`.

@@ -12,6 +12,9 @@ const fs = require("fs");
     await page.goto(process.env.DEMO_URL || "http://127.0.0.1:8197/");
     await page.waitForSelector(".card.referenced");
     await page.waitForSelector(".quality-row", { state: "attached" });
+    await page.waitForSelector("#responsive-clips .quality-row", {
+      state: "attached",
+    });
     const count = await page.locator("#scenario option").count();
     if (count !== 11) throw Error("Expected 11 scenarios, got " + count);
     if (await page.locator("audio[autoplay]").count())
@@ -54,7 +57,7 @@ const fs = require("fs");
           scenarios: count,
           no_autoplay: true,
           mobile_overflow: false,
-          audio_endpoints: 19,
+          audio_endpoints: 25,
           console_errors: errors,
         },
         null,

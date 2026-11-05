@@ -57,5 +57,26 @@ class MeasuredTests(unittest.TestCase):
         self.assertGreater(x["active_near_error_snr_db"], 100)
 
 
+@unittest.skipUnless(
+    (PATH.parent / "continuity.json").exists(), "Run continuity.py first"
+)
+class ContinuityEvidenceTests(unittest.TestCase):
+    def test_continuity_and_safety_joint_result_preserves_failures(self):
+        rows = json.loads((PATH.parent / "continuity.json").read_text())["rows"]
+        self.assertEqual(len(rows), 10)
+        for row in rows:
+            self.assertEqual(
+                row["joint_numerical_pass"], row["scenario"] != "delay_change"
+            )
+            self.assertEqual(row["audible_retention_fraction"], 1)
+            self.assertIsNone(row["mute"])
+
+    def test_actual_neural_conditioning_smoke(self):
+        result = json.loads((PATH.parent / "conditioning-smoke.json").read_text())
+        self.assertTrue(result["passed"])
+        self.assertLess(abs(result["measured_hz"] - 330), 7)
+        self.assertAlmostEqual(result["rms_ratio_observed"], 0.5, places=2)
+
+
 if __name__ == "__main__":
     unittest.main()

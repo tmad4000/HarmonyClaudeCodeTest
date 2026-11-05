@@ -1,0 +1,370 @@
+{
+  "host": "SDMM770.local",
+  "date": "2026-11-05T06:30:09.137552+00:00",
+  "profiles": {
+    "original": {
+      "step": 4096,
+      "context": 2048,
+      "right": 512,
+      "overlap": 512
+    },
+    "responsive": {
+      "step": 2048,
+      "context": 1024,
+      "right": 512,
+      "overlap": 512
+    },
+    "short_right": {
+      "step": 2048,
+      "context": 2048,
+      "right": 0,
+      "overlap": 512
+    },
+    "short_context": {
+      "step": 2048,
+      "context": 512,
+      "right": 0,
+      "overlap": 512
+    },
+    "small_step": {
+      "step": 1024,
+      "context": 1024,
+      "right": 0,
+      "overlap": 512
+    }
+  },
+  "rows": [
+    {
+      "fixture": 1,
+      "profile": "original",
+      "rtf": 0.581487506307657,
+      "inference_ms": {
+        "50": 52.13110405020416,
+        "95": 58.71417952002958,
+        "99": 60.16136979800649
+      },
+      "initial_input_wait_ms": 116.09977324263039,
+      "estimated_latency_p95_ms": 186.423930086923,
+      "serialized_ready_delay_p95_ms": 174.89708210344287,
+      "max_worker_backlog_ms": 60.44737494084984,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 15.664287829307812,
+      "pitch_gross_error_fraction": 0.010101010101010102,
+      "voiced_coverage": 0.99,
+      "stream_offline_logmel_mae": 0.20705482363700867,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.002367151901125908,
+      "all_sample_step_p95": 0.00332040642388165
+    },
+    {
+      "fixture": 1,
+      "profile": "responsive",
+      "rtf": 0.696223694370454,
+      "inference_ms": {
+        "50": 31.2090830411762,
+        "95": 37.00574606191367,
+        "99": 38.906378687825054
+      },
+      "initial_input_wait_ms": 69.65986394557822,
+      "estimated_latency_p95_ms": 118.27558733175493,
+      "serialized_ready_delay_p95_ms": 106.73421856250313,
+      "max_worker_backlog_ms": 39.15504110045731,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 14.885310613907343,
+      "pitch_gross_error_fraction": 0.010101010101010102,
+      "voiced_coverage": 0.99,
+      "stream_offline_logmel_mae": 0.2772553563117981,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.003413768019527197,
+      "all_sample_step_p95": 0.0032501574605703354
+    },
+    {
+      "fixture": 1,
+      "profile": "short_right",
+      "rtf": 0.768897329172116,
+      "inference_ms": {
+        "50": 34.6472910605371,
+        "95": 40.288445795886226,
+        "99": 43.14792251447216
+      },
+      "initial_input_wait_ms": 58.049886621315196,
+      "estimated_latency_p95_ms": 109.94830974146447,
+      "serialized_ready_delay_p95_ms": 98.39855335304901,
+      "max_worker_backlog_ms": 43.75800001434982,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 16.014423245558795,
+      "pitch_gross_error_fraction": 0.010101010101010102,
+      "voiced_coverage": 0.99,
+      "stream_offline_logmel_mae": 0.2813952565193176,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.003419742686673999,
+      "all_sample_step_p95": 0.0032613337971270084
+    },
+    {
+      "fixture": 1,
+      "profile": "short_context",
+      "rtf": 0.7323520089490241,
+      "inference_ms": {
+        "50": 32.31870895251632,
+        "95": 48.82210806244984,
+        "99": 55.55593700846657
+      },
+      "initial_input_wait_ms": 58.049886621315196,
+      "estimated_latency_p95_ms": 118.48197200802808,
+      "serialized_ready_delay_p95_ms": 124.9179790515511,
+      "max_worker_backlog_ms": 74.16707099411136,
+      "calls_over_step_fraction": 0.09195402298850575,
+      "pitch_median_absolute_cents": 15.212766051739763,
+      "pitch_gross_error_fraction": 0.010101010101010102,
+      "voiced_coverage": 0.99,
+      "stream_offline_logmel_mae": 0.3071747124195099,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.002590468153357506,
+      "all_sample_step_p95": 0.003259503748267889
+    },
+    {
+      "fixture": 1,
+      "profile": "small_step",
+      "rtf": 1.1554597689005077,
+      "inference_ms": {
+        "50": 20.08962503168732,
+        "95": 49.21265821903944,
+        "99": 61.74922343809158
+      },
+      "initial_input_wait_ms": 34.82993197278911,
+      "estimated_latency_p95_ms": 95.6525675160916,
+      "serialized_ready_delay_p95_ms": 785.8927073735138,
+      "max_worker_backlog_ms": 766.8040652985866,
+      "calls_over_step_fraction": 0.3352601156069364,
+      "pitch_median_absolute_cents": 14.717816215193327,
+      "pitch_gross_error_fraction": 0.01,
+      "voiced_coverage": 1.0,
+      "stream_offline_logmel_mae": 0.3440009653568268,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.0031965789385139942,
+      "all_sample_step_p95": 0.0031415200792253017
+    },
+    {
+      "fixture": 10,
+      "profile": "original",
+      "rtf": 0.5820522172119956,
+      "inference_ms": {
+        "50": 52.09579202346504,
+        "95": 56.40148398233578,
+        "99": 66.79549103369936
+      },
+      "initial_input_wait_ms": 116.09977324263039,
+      "estimated_latency_p95_ms": 184.1112345492292,
+      "serialized_ready_delay_p95_ms": 172.57411072498962,
+      "max_worker_backlog_ms": 69.11583407782018,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 25.474333533094903,
+      "pitch_gross_error_fraction": 0.05319148936170213,
+      "voiced_coverage": 0.9494949494949495,
+      "stream_offline_logmel_mae": 0.2197679877281189,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.010902702808380127,
+      "all_sample_step_p95": 0.010147852823138237
+    },
+    {
+      "fixture": 10,
+      "profile": "responsive",
+      "rtf": 0.7022733490523181,
+      "inference_ms": {
+        "50": 30.933583970181644,
+        "95": 40.609158179722726,
+        "99": 43.15689816372469
+      },
+      "initial_input_wait_ms": 69.65986394557822,
+      "estimated_latency_p95_ms": 121.87899944956399,
+      "serialized_ready_delay_p95_ms": 110.34471413355051,
+      "max_worker_backlog_ms": 44.37000001780689,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 23.321137970452543,
+      "pitch_gross_error_fraction": 0.06451612903225806,
+      "voiced_coverage": 0.9393939393939394,
+      "stream_offline_logmel_mae": 0.3076947033405304,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.00795428641140461,
+      "all_sample_step_p95": 0.009868694469332695
+    },
+    {
+      "fixture": 10,
+      "profile": "short_right",
+      "rtf": 0.766786960669418,
+      "inference_ms": {
+        "50": 34.46433297358453,
+        "95": 39.29779169848189,
+        "99": 45.18472608411685
+      },
+      "initial_input_wait_ms": 58.049886621315196,
+      "estimated_latency_p95_ms": 108.95765564406013,
+      "serialized_ready_delay_p95_ms": 98.6952447507197,
+      "max_worker_backlog_ms": 54.12904208060354,
+      "calls_over_step_fraction": 0.011494252873563218,
+      "pitch_median_absolute_cents": 22.834302670771223,
+      "pitch_gross_error_fraction": 0.021739130434782608,
+      "voiced_coverage": 0.9292929292929293,
+      "stream_offline_logmel_mae": 0.3146013617515564,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.010781476274132729,
+      "all_sample_step_p95": 0.009816034696996212
+    },
+    {
+      "fixture": 10,
+      "profile": "short_context",
+      "rtf": 0.5310329124764077,
+      "inference_ms": {
+        "50": 23.03449995815754,
+        "95": 35.21804566262292,
+        "99": 43.6170745594427
+      },
+      "initial_input_wait_ms": 58.049886621315196,
+      "estimated_latency_p95_ms": 104.87790960820115,
+      "serialized_ready_delay_p95_ms": 93.3549445995726,
+      "max_worker_backlog_ms": 48.464084044098854,
+      "calls_over_step_fraction": 0.011494252873563218,
+      "pitch_median_absolute_cents": 27.361383370192094,
+      "pitch_gross_error_fraction": 0.1,
+      "voiced_coverage": 0.9090909090909091,
+      "stream_offline_logmel_mae": 0.37615445256233215,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.009230716153979301,
+      "all_sample_step_p95": 0.009910850785672665
+    },
+    {
+      "fixture": 10,
+      "profile": "small_step",
+      "rtf": 0.9630339684544315,
+      "inference_ms": {
+        "50": 19.897458027116954,
+        "95": 42.61422518175096,
+        "99": 58.22216025553644
+      },
+      "initial_input_wait_ms": 34.82993197278911,
+      "estimated_latency_p95_ms": 89.05413447880312,
+      "serialized_ready_delay_p95_ms": 250.81593710332533,
+      "max_worker_backlog_ms": 226.80627656165032,
+      "calls_over_step_fraction": 0.09826589595375723,
+      "pitch_median_absolute_cents": 28.872656466926887,
+      "pitch_gross_error_fraction": 0.07608695652173914,
+      "voiced_coverage": 0.9292929292929293,
+      "stream_offline_logmel_mae": 0.4161539673805237,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.00871596485376358,
+      "all_sample_step_p95": 0.009230588562786579
+    },
+    {
+      "fixture": 20,
+      "profile": "original",
+      "rtf": 0.5777123615333671,
+      "inference_ms": {
+        "50": 52.0083955489099,
+        "95": 54.915323242312304,
+        "99": 62.97176961321384
+      },
+      "initial_input_wait_ms": 116.09977324263039,
+      "estimated_latency_p95_ms": 182.62507380920573,
+      "serialized_ready_delay_p95_ms": 171.09286882335158,
+      "max_worker_backlog_ms": 68.19637503940612,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 28.641008362875052,
+      "pitch_gross_error_fraction": 0.05714285714285714,
+      "voiced_coverage": 1.0,
+      "stream_offline_logmel_mae": 0.2140442579984665,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.017341671511530876,
+      "all_sample_step_p95": 0.01457408256828785
+    },
+    {
+      "fixture": 20,
+      "profile": "responsive",
+      "rtf": 0.6735344495886554,
+      "inference_ms": {
+        "50": 30.425166944041848,
+        "95": 32.82615825301036,
+        "99": 38.581869984045625
+      },
+      "initial_input_wait_ms": 69.65986394557822,
+      "estimated_latency_p95_ms": 114.09599952285163,
+      "serialized_ready_delay_p95_ms": 102.54615584622799,
+      "max_worker_backlog_ms": 41.837917058728635,
+      "calls_over_step_fraction": 0.0,
+      "pitch_median_absolute_cents": 30.143860758156897,
+      "pitch_gross_error_fraction": 0.02857142857142857,
+      "voiced_coverage": 1.0,
+      "stream_offline_logmel_mae": 0.2941674292087555,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.007266541942954063,
+      "all_sample_step_p95": 0.013991019688546658
+    },
+    {
+      "fixture": 20,
+      "profile": "short_right",
+      "rtf": 0.7900610140485814,
+      "inference_ms": {
+        "50": 34.57395895384252,
+        "95": 38.033833901863545,
+        "99": 75.27309497818352
+      },
+      "initial_input_wait_ms": 58.049886621315196,
+      "estimated_latency_p95_ms": 107.69369784744178,
+      "serialized_ready_delay_p95_ms": 138.10755710277286,
+      "max_worker_backlog_ms": 114.51709068844895,
+      "calls_over_step_fraction": 0.034482758620689655,
+      "pitch_median_absolute_cents": 29.03935915835067,
+      "pitch_gross_error_fraction": 0.04285714285714286,
+      "voiced_coverage": 1.0,
+      "stream_offline_logmel_mae": 0.3046130836009979,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.014664929360151291,
+      "all_sample_step_p95": 0.014243563637137413
+    },
+    {
+      "fixture": 20,
+      "profile": "short_context",
+      "rtf": 0.5578487201601883,
+      "inference_ms": {
+        "50": 23.14820804167539,
+        "95": 38.55907517718151,
+        "99": 59.567485500592745
+      },
+      "initial_input_wait_ms": 58.049886621315196,
+      "estimated_latency_p95_ms": 108.21893912275975,
+      "serialized_ready_delay_p95_ms": 97.27990353132073,
+      "max_worker_backlog_ms": 76.70109179801176,
+      "calls_over_step_fraction": 0.022988505747126436,
+      "pitch_median_absolute_cents": 29.798150290763648,
+      "pitch_gross_error_fraction": 0.014285714285714285,
+      "voiced_coverage": 1.0,
+      "stream_offline_logmel_mae": 0.35395190119743347,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.01665147766470909,
+      "all_sample_step_p95": 0.01388047356158495
+    },
+    {
+      "fixture": 20,
+      "profile": "small_step",
+      "rtf": 0.9144091247008358,
+      "inference_ms": {
+        "50": 19.955666968598962,
+        "95": 30.390624771825973,
+        "99": 38.922521830536425
+      },
+      "initial_input_wait_ms": 34.82993197278911,
+      "estimated_latency_p95_ms": 76.83053406887812,
+      "serialized_ready_delay_p95_ms": 163.3883473819009,
+      "max_worker_backlog_ms": 149.5424530072591,
+      "calls_over_step_fraction": 0.08092485549132948,
+      "pitch_median_absolute_cents": 27.93545359713152,
+      "pitch_gross_error_fraction": 0.04285714285714286,
+      "voiced_coverage": 1.0,
+      "stream_offline_logmel_mae": 0.4075353741645813,
+      "content_envelope_lag_ms": 0.0,
+      "seam_jump_p95": 0.01267451886087656,
+      "all_sample_step_p95": 0.013274007476866245
+    }
+  ],
+  "note": "One worker; two CPU threads. Virtual input schedule uses measured push service times; no hardware audio. Short windows trade context for latency. Same fixture/normalization and fixed +4 semitones.",
+  "peak_rss_mib": 324.8125
+}

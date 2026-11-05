@@ -16,7 +16,7 @@ import sounddevice as sd
 from scipy import signal
 from dsp import SR, HOP, rms, db
 from echo import ReferenceTimeline, ReferenceCanceller, Safety, estimate_path
-from vocoder import NeuralVocoder, StreamingVocoder
+from vocoder import NeuralVocoder, StreamingVocoder, STREAM_PROFILES
 
 ROOT = Path(__file__).parent
 
@@ -31,7 +31,13 @@ class LiveSession:
         speakers=False,
         status_file=None,
         key=None,
+        profile="original",
+        conditioning=None,
     ):
+        if profile not in STREAM_PROFILES:
+            raise ValueError("Unknown stream profile")
+        self.profile = profile
+        self.conditioning = conditioning
         self.key = key
         self.device = device
         self.shift = shift
@@ -75,6 +81,8 @@ class LiveSession:
             if self.timings
             else None,
             "gain": self.gain,
+            "stream_profile": self.profile,
+            "external_conditioning": self.conditioning is not None,
             "output_peak_limit": self.safety.ceiling,
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
@@ -179,7 +187,13 @@ class LiveSession:
         self.publish()
         model = NeuralVocoder(threads=2)
         model.synthesize(np.zeros(7168, dtype=np.float32))
-        self.synth = StreamingVocoder(model=model, semitones=self.shift, key=self.key)
+        self.synth = StreamingVocoder(
+            model=model,
+            semitones=self.shift,
+            key=self.key,
+            conditioning=self.conditioning,
+            **STREAM_PROFILES[self.profile],
+        )
         # Single full-duplex device uses common host timestamps; reject absent timestamps.
         stream = sd.Stream(
             samplerate=SR,
@@ -264,6 +278,7 @@ def main():
         choices=["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
         help="Diatonic third in this major key; otherwise use fixed --shift",
     )
+    p.add_argument("--profile", choices=STREAM_PROFILES, default="original")
     p.add_argument("--device", type=int)
     p.add_argument("--shift", type=float, default=4)
     p.add_argument("--gain", type=float, default=0.35)
@@ -280,6 +295,7 @@ def main():
         a.gain,
         a.seconds,
         a.speakers_calibrate,
+        profile=a.profile,
         key=(
             ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].index(
                 a.key

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 import numpy as np
 from echo import ReferenceCanceller, Safety
-from vocoder import StreamingVocoder
+from vocoder import StreamingVocoder, STREAM_PROFILES
 
 
 class Signalsmith:
@@ -35,10 +35,23 @@ class Signalsmith:
 
 class Engine:
     def __init__(
-        self, kind="neural", impulse=None, shift=4, gain=0.5, model=None, safety=True
+        self,
+        kind="neural",
+        impulse=None,
+        shift=4,
+        gain=0.5,
+        model=None,
+        safety=True,
+        profile="original",
+        conditioning=None,
     ):
         self.synth = (
-            StreamingVocoder(model=model, semitones=shift)
+            StreamingVocoder(
+                model=model,
+                semitones=shift,
+                conditioning=conditioning,
+                **STREAM_PROFILES[profile],
+            )
             if kind == "neural"
             else Signalsmith(shift)
         )
