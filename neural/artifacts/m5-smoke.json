@@ -1,0 +1,11 @@
+{
+  "model_sha256_verified": true,
+  "inference_ms": [
+    51.62,
+    48.19,
+    49.86
+  ],
+  "output_samples": 7168,
+  "microphone_opened": false,
+  "audio_played": false
+}
