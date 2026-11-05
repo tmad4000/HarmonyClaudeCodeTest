@@ -83,3 +83,24 @@ macOS microphone permission, physical latency and room-loop acceptance; adaptive
 path changes with singer preservation; lower latency/stateful neural synthesis;
 Social project-directory update when authenticated access is available. The
 original AIB-6q3 remains open for acceptance and robustness work.
+
+## Responsiveness continuation
+
+The optional `responsive` profile and pure timestamped renderer interface are
+implemented separately from the third-view controller. See
+`../research/RENDERER-CONTRACT.md` for units, ownership and timing semantics.
+
+* Same-sweep M4 source-to-worker-ready p95: original 171–175 ms; responsive
+  103–110 ms. Device/playout delay is extra. The original profile remains default.
+* 15 profile/fixture sweep runs expose backlog; the smallest step was rejected.
+* Ten joint audible-output/echo comparisons: eight meet numerical criteria;
+  both changed-delay cases fail clean-input SNR while retaining audible output.
+* 28 unit/runtime/evidence checks pass on M4/M5; real neural conditioning reaches
+  330.9 Hz for a 330 Hz request and exactly .5 RMS ratio for .5 gain multiplier.
+* Short native-code M5 responsive smoke: 69.7 ms input buffering, 27.9 ms p95
+  inference, processing RTF .585; no mic or playback opened. This is not a
+  hardware-loop or human musical acceptance.
+
+The separate musical controller has not been integrated. In particular, its
+additive oscillator gain is not automatically equivalent to a vocoder gain
+multiplier. No controller weights or policy were copied into this workspace.

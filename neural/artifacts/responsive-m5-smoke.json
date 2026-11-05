@@ -1,0 +1,11 @@
+{
+  "host": "M5",
+  "profile": "responsive",
+  "input_buffer_ms": 69.65986394557822,
+  "processing_rtf": 0.5854161045281217,
+  "inference_ms_p95": 27.944635058520362,
+  "output_samples": 86016,
+  "passed": true,
+  "microphone_opened": false,
+  "audio_played": false
+}
