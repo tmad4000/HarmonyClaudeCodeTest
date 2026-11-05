@@ -1,0 +1,45 @@
+test_control_validation_rejects_bad_units_and_values (test_conditioning.ConditioningTests.test_control_validation_rejects_bad_units_and_values) ... ok
+test_external_pitch_and_gain_reach_renderer_with_sample_clock (test_conditioning.ConditioningTests.test_external_pitch_and_gain_reach_renderer_with_sample_clock) ... ok
+test_invalid_stream_configuration_or_input_is_rejected (test_conditioning.ConditioningTests.test_invalid_stream_configuration_or_input_is_rejected) ... ok
+test_short_harmony_loss_fails_even_with_good_echo_metrics (test_conditioning.ConditioningTests.test_short_harmony_loss_fails_even_with_good_echo_metrics) ... ok
+test_silence_cannot_pass_audible_continuity_metric (test_conditioning.ConditioningTests.test_silence_cannot_pass_audible_continuity_metric) ... ok
+test_singer_loss_or_safety_mute_fails_despite_continuous_output (test_conditioning.ConditioningTests.test_singer_loss_or_safety_mute_fails_despite_continuous_output) ... ok
+test_stream_reports_absolute_source_positions_without_controller_decisions (test_conditioning.ConditioningTests.test_stream_reports_absolute_source_positions_without_controller_decisions) ... ok
+test_bounded_cache_requires_explicit_release_and_keeps_queued_copy (test_control_adapter.AdapterTests.test_bounded_cache_requires_explicit_release_and_keeps_queued_copy) ... ok
+test_epoch_and_capacity_cannot_be_rebound_in_place (test_control_adapter.AdapterTests.test_epoch_and_capacity_cannot_be_rebound_in_place) ... ok
+test_epoch_causality_grid_and_receiver_availability (test_control_adapter.AdapterTests.test_epoch_causality_grid_and_receiver_availability) ... ok
+test_explicit_preroll_does_not_pad_missing_positive_frames (test_control_adapter.AdapterTests.test_explicit_preroll_does_not_pad_missing_positive_frames) ... ok
+test_input_and_returned_arrays_cannot_mutate_cached_or_queued_values (test_control_adapter.AdapterTests.test_input_and_returned_arrays_cannot_mutate_cached_or_queued_values) ... ok
+test_invalid_gain_pitch_shape_and_preroll_are_rejected (test_control_adapter.AdapterTests.test_invalid_gain_pitch_shape_and_preroll_are_rejected) ... ok
+test_packet_reaches_overlapping_renderer_without_rms_rescaling (test_control_adapter.AdapterTests.test_packet_reaches_overlapping_renderer_without_rms_rescaling) ... ok
+test_pinned_controller_packet_preserves_values_and_request_order (test_control_adapter.AdapterTests.test_pinned_controller_packet_preserves_values_and_request_order) ... ok
+test_revisions_and_watermark_regression_fail_atomically (test_control_adapter.AdapterTests.test_revisions_and_watermark_regression_fail_atomically) ... ok
+test_unavailable_controls_abort_before_onnx_and_do_not_fallback (test_control_adapter.AdapterTests.test_unavailable_controls_abort_before_onnx_and_do_not_fallback) ... ok
+test_diatonic_third_preserves_vibrato (test_core.CoreTests.test_diatonic_third_preserves_vibrato) ... ok
+test_feature_contract (test_core.CoreTests.test_feature_contract) ... ok
+test_fir_doubletalk_correlated_unison (test_core.CoreTests.test_fir_doubletalk_correlated_unison) ... ok
+test_independent_probe_identification (test_core.CoreTests.test_independent_probe_identification) ... ok
+test_pitch_sustained_vibrato_and_octaves (test_core.CoreTests.test_pitch_sustained_vibrato_and_octaves) ... ok
+test_post_limiter_reference_and_latching_mute (test_core.CoreTests.test_post_limiter_reference_and_latching_mute) ... ok
+test_reference_shape_and_nonfinite_rejected (test_core.CoreTests.test_reference_shape_and_nonfinite_rejected) ... ok
+test_timeline_fractional_offset_and_gap (test_core.CoreTests.test_timeline_fractional_offset_and_gap) ... ok
+test_actual_neural_conditioning_smoke (test_measured.ContinuityEvidenceTests.test_actual_neural_conditioning_smoke) ... ok
+test_continuity_and_safety_joint_result_preserves_failures (test_measured.ContinuityEvidenceTests.test_continuity_and_safety_joint_result_preserves_failures) ... ok
+test_fixed_path_preserves_correlated_singer_without_mute (test_measured.MeasuredTests.test_fixed_path_preserves_correlated_singer_without_mute) ... ok
+test_full_matrix (test_measured.MeasuredTests.test_full_matrix) ... ok
+test_high_gain_baselines_require_safety_and_reference_does_not (test_measured.MeasuredTests.test_high_gain_baselines_require_safety_and_reference_does_not) ... ok
+test_mismatch_limit_is_visible_not_hidden_by_a_gate (test_measured.MeasuredTests.test_mismatch_limit_is_visible_not_hidden_by_a_gate) ... ok
+test_silent_user_tail_with_reference (test_measured.MeasuredTests.test_silent_user_tail_with_reference) ... ok
+test_singer_only_no_phantom_echo_subtraction (test_measured.MeasuredTests.test_singer_only_no_phantom_echo_subtraction) ... ok
+test_device_dropout_mutes_and_records_zero_reference (test_runtime.RuntimeTests.test_device_dropout_mutes_and_records_zero_reference) ... ok
+test_input_queue_overload_latches (test_runtime.RuntimeTests.test_input_queue_overload_latches) ... ok
+test_invalid_clock_mutes_before_output (test_runtime.RuntimeTests.test_invalid_clock_mutes_before_output) ... ok
+test_output_starvation_latches (test_runtime.RuntimeTests.test_output_starvation_latches) ... ok
+test_reference_gap_latches (test_runtime.RuntimeTests.test_reference_gap_latches) ... ok
+test_reference_is_exact_final_output (test_runtime.RuntimeTests.test_reference_is_exact_final_output) ... ok
+test_stream_buffer_is_bounded_and_no_whole_song_needed (test_runtime.RuntimeTests.test_stream_buffer_is_bounded_and_no_whole_song_needed) ... ok
+
+----------------------------------------------------------------------
+Ran 40 tests in 0.035s
+
+OK

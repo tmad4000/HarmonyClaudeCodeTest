@@ -1,0 +1,9 @@
+{
+  "target_hz": 330,
+  "measured_hz": 330.8842327881115,
+  "gain_multiplier_requested": 0.5,
+  "rms_ratio_observed": 0.5,
+  "passed": true,
+  "microphone_opened": false,
+  "playback": false
+}

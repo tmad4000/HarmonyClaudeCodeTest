@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Harmony Lab · Neural reference experiment</title
+  ><link rel="stylesheet" href="demo.css" />
+  <header>
+    <div class="brand">
+      <span class="mark">≋</span> Harmony Lab
+      <span class="tag">EXPERIMENT</span>
+    </div>
+    <span class="meta">AIB-6q3 · isolated neural engine</span>
+  </header>
+  <main>
+    <div class="heading">
+      <div>
+        <p class="eyebrow">SINGING / PLAYBACK REFERENCE / CLOSED LOOP</p>
+        <h1>Hear what the reference changes.</h1>
+        <p class="intro">
+          Compare the same sung phrase through Signalsmith, neural resynthesis,
+          and neural resynthesis with explicit echo subtraction.
+        </p>
+      </div>
+      <button id="stop" class="stop">Stop all audio <kbd>Esc</kbd></button>
+    </div>
+    <div class="notice">
+      <strong>Experimental, not room-validated.</strong> A fixed calibration can
+      preserve unison singing; movement and speaker distortion can break that
+      estimate. Listen at low volume. Nothing plays automatically.
+    </div>
+    <p id="latency-note" class="secondary"></p>
+    <section class="controls">
+      <label
+        >Test condition<select id="scenario" disabled>
+          <option>Loading measurements…</option>
+        </select></label
+      >
+      <div id="description" class="secondary"></div>
+      <label class="volume"
+        >Review volume
+        <input
+          id="volume"
+          type="range"
+          min="0"
+          max="0.5"
+          step="0.01"
+          value="0.15"
+        /><output id="volume-label">15%</output></label
+      >
+    </section>
+    <div class="pipeline" aria-label="Signal path">
+      <span>Microphone + singer</span><b>→</b><span>Reference subtraction</span
+      ><b>→</b><span>Neural waveform synthesis</span><b>→</b
+      ><span>Limiter → playback</span
+      ><span class="return"
+        >↳ Actual playback PCM returns to the canceller</span
+      >
+    </div>
+    <section class="comparison" id="comparison" aria-live="polite"></section>
+    <section class="source">
+      <div>
+        <h2>Original singer</h2>
+        <p id="source-description" class="secondary">
+          Licensed vocadito fixture
+        </p>
+      </div>
+      <audio controls preload="metadata" src="artifacts/singer.wav"></audio>
+    </section>
+    <details>
+      <summary>Neural singing quality · three real voices</summary>
+      <div id="quality-clips"></div>
+    </details>
+    <details>
+      <summary>Response-time experiment · original versus responsive</summary>
+      <p id="responsive-note" class="secondary">
+        Loading measured timing tradeoffs…
+      </p>
+      <div id="responsive-clips"></div>
+    </details>
+    <section class="details">
+      <div>
+        <h2>What is actually neural?</h2>
+        <p>
+          PC-NSF-HiFiGAN generates a new waveform from mel features and target
+          pitch. Pitch tracking, harmony intervals, reference cancellation, and
+          safety are DSP or rules.
+        </p>
+        <p>
+          The streaming adapter uses bounded overlapping windows. It does not
+          wait for a finished song, but it is not a natively causal neural
+          model.
+        </p>
+      </div>
+      <div>
+        <h2>Read the comparison correctly</h2>
+        <p>
+          Signalsmith is the exact vendored synthesis core at 60 ms. Chrome’s
+          device AEC, gate, and notch graph are absent from this reproducible
+          simulation. This is not a full baseline room comparison.
+        </p>
+        <p>
+          Clean-singer error is measured before synthesis. Muting is reported
+          separately and never counted as successful separation.
+        </p>
+      </div>
+    </section>
+    <details>
+      <summary>All measured conditions</summary>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Condition</th>
+              <th>Engine</th>
+              <th>Near-error SNR</th>
+              <th>Tail dBFS</th>
+              <th>RTF</th>
+              <th>Safety mute</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+    </details>
+    <footer>
+      <span id="run-info">Loading verified measurements…</span
+      ><a href="artifacts/measurements.json">Raw measurements ↗</a
+      ><a href="README.md">Run locally on M5 ↗</a>
+    </footer>
+    <p id="error" role="alert" hidden></p>
+  </main>
+  <script src="demo.js"></script>
+</html>

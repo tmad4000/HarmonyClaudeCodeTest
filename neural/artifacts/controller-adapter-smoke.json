@@ -1,0 +1,22 @@
+{
+  "host": "SDMM770.local",
+  "date": "2026-11-05T06:54:39.672571+00:00",
+  "fixture_sha256": "13872b196ed0f58bd0567b062ef4d4e7e110398d0dbb5e2e6b7accf36932f4ae",
+  "controller_commit": "4aefe8c554de963faa42a404ebc8f0dc74edb884",
+  "clock_id": "synthetic-contract-fixture-v1",
+  "profile": "responsive",
+  "source_samples": 6144,
+  "output_samples": 4096,
+  "onnx_calls": 2,
+  "inference_ms": [
+    37.56166703533381,
+    30.930542037822306
+  ],
+  "exact_controller_pitch_feeds": true,
+  "immutable_overlap_pitch_feeds": true,
+  "output_rms": 0.009168833494186401,
+  "microphone_opened": false,
+  "audio_played": false,
+  "scope": "Offline packet-to-neural-renderer smoke only. No live producer/transport, physical latency, continuous musical quality or feedback acceptance claimed.",
+  "passed": true
+}
