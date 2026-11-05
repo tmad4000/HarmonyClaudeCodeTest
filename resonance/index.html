@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Resonance · Musical partner</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<header><div class="brand">HARMONY SINGER <span>/ THIRD EXPERIMENT</span></div><span class="local">Audio stays on this device</span></header>
+<section class="intro"><div><h1>Sing. Let it answer.</h1><p>A small musical memory follows your contour, breath and phrasing.</p></div><span id="modeBadge" class="badge">Ready</span></section>
+<section class="stage" aria-label="Live musical response">
+ <div class="voices"><div><span class="label">YOUR VOICE</span><strong id="voice">—</strong></div><div class="relationship"><span id="relation">Listening space</span><span id="pulse">Free time</span></div><div><span class="label">PARTNER</span><strong id="partner">—</strong></div></div>
+ <canvas id="trace" width="1000" height="180" aria-label="Recent pitch contour: your voice and the partner" role="img"></canvas>
+ <div class="traceLegend"><span><i class="human"></i>Your contour</span><span><i class="other"></i>Partner contour</span><span id="memory">Memory at rest</span></div>
+</section>
+<section class="controls" aria-label="Session controls">
+ <div class="startrow"><button id="start" class="primary">Start singing</button><button id="mute" class="danger" disabled>Mute · Esc</button><button id="preview">Hear example</button></div>
+ <div class="settings"><label>Listening setup<select id="setup"><option value="headphones">Headphones</option><option value="speakers">Speakers · calibrate first</option></select></label><label>Musical behavior<select id="behavior"><option value="partner">Recurrent partner</option><option value="baseline">Simple fifth follower</option></select></label><label>Partner level <output id="levelValue">50%</output><input id="level" type="range" min="0" max="80" value="50"></label></div>
+ <div id="speakerPanel" hidden><p>Keep the room quiet and your output volume low. Calibration plays a short soft noise. Recalibrate after moving the mic, changing volume or switching audio devices.</p><button id="calibrate">Calibrate speakers</button><span id="roomStatus">No room measurement yet</span></div>
+ <p id="status" role="status" aria-live="polite">Use headphones for the first listen. Start enables your microphone; the example uses a synthetic voice.</p>
+</section>
+<details><summary>What is happening?</summary><div class="detailsGrid"><p><b>Musical memory.</b> Twelve recurrent units respond to contour, intensity, onsets and pauses. The coefficients are hand-authored, not trained on songs. Harmony choices are constrained to a fourth, fifth or octave below. The sound is a simple synthesizer, not a cloned singing voice.</p><p><b>Timing.</b> Pitch tracking uses a trailing 40 ms window. A short contour prediction can reduce tracking lag; it cannot know your next note. Rhythmic confidence falls in free time. There is no brain sensing or pitch-cycle phase-lock claim.</p><p><b>Speaker limits.</b> A measured playback path is subtracted from the mic. A conservative guard may mute sustained unison because your voice and returned playback can be indistinguishable. Moving-room and real-singing performance still need listening acceptance.</p><dl><dt>Playback path</dt><dd id="echo">Headphones · no cancellation</dd><dt>Audio timing</dt><dd id="latency">Not running</dd><dt>Safety</dt><dd id="safety">Muted</dd></dl></div></details>
+<footer><a href="docs/EXPERIMENT.md">Design & evidence</a><a href="evidence/validation.json">Measured results</a><span>Independent experiment · AIB-bcv</span></footer>
+</main><script type="module" src="app.mjs"></script></body></html>

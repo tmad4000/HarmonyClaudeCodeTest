@@ -1,0 +1,1 @@
+{"name":"resonant-partner-experiment","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","validate":"node tests/validate.mjs","weights":"node models/author.mjs","start":"node server.mjs"}}

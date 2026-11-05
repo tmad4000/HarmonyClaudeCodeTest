@@ -1,0 +1,199 @@
+{
+  "createdAt": "2026-11-05T06:22:31.750Z",
+  "kind": "synthetic causal validation; not real-room acceptance",
+  "environment": {
+    "node": "v22.23.4",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "model": {
+    "units": 12,
+    "coefficients": 329,
+    "provenance": "authored, no gradient training or pretrained parameters"
+  },
+  "calibration": {
+    "erleDb": 47.57839573418237,
+    "noiseRms": 0.00005804678399412866,
+    "residualRatio": 0.0028595465785031735,
+    "mainDelayMs": 30,
+    "fitMs": 45.422625,
+    "accepted": true
+  },
+  "scenarios": [
+    {
+      "name": "stable",
+      "peakOutput": 0.012670736759901047,
+      "tailRms": 0,
+      "nearEndErrorDb": -61.069482132541914,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 80.721417,
+      "realTimeFactor": 0.010090177125,
+      "block10msComputeP99Ms": 0.448875000000001,
+      "block10msComputeMaxMs": 3.931167000000002
+    },
+    {
+      "name": "baseline",
+      "peakOutput": 0.013012472540140152,
+      "tailRms": 0,
+      "nearEndErrorDb": -61.02631936670161,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 21.499999999999964,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 62.57891699999999,
+      "realTimeFactor": 0.007822364624999998,
+      "block10msComputeP99Ms": 0.32824999999999704,
+      "block10msComputeMaxMs": 2.9503330000000005
+    },
+    {
+      "name": "no-cancellation",
+      "peakOutput": 0.012765650637447834,
+      "tailRms": 0,
+      "nearEndErrorDb": -20.29001136595449,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 39.32054199999999,
+      "realTimeFactor": 0.004915067749999998,
+      "block10msComputeP99Ms": 0.1220000000000141,
+      "block10msComputeMaxMs": 0.1818749999999909
+    },
+    {
+      "name": "gain-jump",
+      "peakOutput": 0.016717584803700447,
+      "tailRms": 3.763601770215608e-45,
+      "nearEndErrorDb": -7.802389841391543,
+      "outputWhileSingingFraction": 0.983918375620798,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 74.11191600000001,
+      "realTimeFactor": 0.009263989500000002,
+      "block10msComputeP99Ms": 0.33541600000000926,
+      "block10msComputeMaxMs": 3.85191599999996
+    },
+    {
+      "name": "delay-jump",
+      "peakOutput": 0.012922633439302444,
+      "tailRms": 0,
+      "nearEndErrorDb": -22.1191930715436,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 82.64029099999999,
+      "realTimeFactor": 0.010330036374999999,
+      "block10msComputeP99Ms": 0.3416670000000295,
+      "block10msComputeMaxMs": 5.443416000000013
+    },
+    {
+      "name": "gradual-drift",
+      "peakOutput": 0.012842606753110886,
+      "tailRms": 0,
+      "nearEndErrorDb": -23.28754066323663,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 66.157333,
+      "realTimeFactor": 0.008269666625,
+      "block10msComputeP99Ms": 0.33412500000002865,
+      "block10msComputeMaxMs": 0.9025000000000318
+    },
+    {
+      "name": "extreme-gain",
+      "peakOutput": 0.026580994948744774,
+      "tailRms": 0,
+      "nearEndErrorDb": 8.086171000146924,
+      "outputWhileSingingFraction": 0.7244163654177506,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": "Playback-correlated residual: recalibrate or use headphones",
+      "faultAtSeconds": 3.839875,
+      "renderComputeMs": 68.06591699999996,
+      "realTimeFactor": 0.008508239624999995,
+      "block10msComputeP99Ms": 0.33587499999998727,
+      "block10msComputeMaxMs": 3.9095419999999876
+    },
+    {
+      "name": "nonlinear-path",
+      "peakOutput": 0.01266954094171524,
+      "tailRms": 0,
+      "nearEndErrorDb": -60.69134155517098,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 68.67666700000007,
+      "realTimeFactor": 0.008584583375000008,
+      "block10msComputeP99Ms": 0.35325000000000273,
+      "block10msComputeMaxMs": 0.7634590000000117
+    },
+    {
+      "name": "dropout",
+      "peakOutput": 0.012635815888643265,
+      "tailRms": 0,
+      "nearEndErrorDb": -3.6385485247060863,
+      "outputWhileSingingFraction": 0.5541403425791411,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": "Input/reference unavailable",
+      "faultAtSeconds": 3.000125,
+      "renderComputeMs": 52.92750000000001,
+      "realTimeFactor": 0.006615937500000001,
+      "block10msComputeP99Ms": 0.32037500000001273,
+      "block10msComputeMaxMs": 0.3765419999999722
+    },
+    {
+      "name": "reference-dropout",
+      "peakOutput": 0.012635362334549427,
+      "tailRms": 0,
+      "nearEndErrorDb": -3.6385490063964228,
+      "outputWhileSingingFraction": 0.5541403425791411,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": "Input/reference unavailable",
+      "faultAtSeconds": 3.000125,
+      "renderComputeMs": 54.625375000000076,
+      "realTimeFactor": 0.006828171875000009,
+      "block10msComputeP99Ms": 0.32045800000003055,
+      "block10msComputeMaxMs": 0.38845900000001166
+    },
+    {
+      "name": "near-only",
+      "peakOutput": 0.01267032977193594,
+      "tailRms": 0,
+      "nearEndErrorDb": -61.04637792691526,
+      "outputWhileSingingFraction": 0.975877563431197,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 28.60895800000003,
+      "realTimeFactor": 0.0035761197500000035,
+      "block10msComputeP99Ms": 0.062082999999915955,
+      "block10msComputeMaxMs": 0.10183400000005349
+    }
+  ],
+  "controller": {
+    "rampLookahead": {
+      "withPredictionMeanSemitones": 0.09733803825434822,
+      "withoutPredictionMeanSemitones": 0.11066489563439498,
+      "assumedLatencyMs": 35,
+      "scope": "steady 2 semitone/s synthetic ramp only"
+    },
+    "testedIntervals": [
+      -7,
+      -5
+    ]
+  },
+  "limitations": [
+    "Synthetic room fixtures only; no live human listening claim",
+    "Digital output ceiling is not a physical sound-pressure guarantee",
+    "Speaker ambiguity guard can mute sustained correlated unison",
+    "Sparse 48-tap room fit may reject dense/reverberant rooms",
+    "Frozen path must be recalibrated after device/room/volume changes"
+  ],
+  "correlatedUnisonSubtractionErrorRms": 0.000005568563764600953,
+  "memoryRssMiB": 78.875
+}

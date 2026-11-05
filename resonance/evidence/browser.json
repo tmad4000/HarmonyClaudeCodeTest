@@ -1,0 +1,28 @@
+{
+  "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Paseo/0.10.0-beta.23 Chrome/152.0.7977.76 Electron/44.2.0 Safari/537.36",
+  "results": [
+    {
+      "sampleRate": 44100,
+      "earlyRms": 0.008512998333659892,
+      "tailRms": 1.4686967831533295e-42,
+      "peak": 0.012631027959287167,
+      "renderMs": 109.89999997615814,
+      "processorError": null
+    },
+    {
+      "sampleRate": 48000,
+      "earlyRms": 0.008516376075834846,
+      "tailRms": 5.0599099195801285e-43,
+      "peak": 0.01264219544827938,
+      "renderMs": 116.19999992847443,
+      "processorError": null
+    },
+    {
+      "calibration": "48000 Hz -> 8000 Hz, fractional delay",
+      "erleDb": 37.51703866525261,
+      "accepted": true
+    }
+  ],
+  "audioPlayback": false,
+  "microphoneAccess": false
+}
