@@ -33,7 +33,8 @@ Models, environments and generated WAVs are git-ignored.
 
 ## A/B review
 
-Run `neural/.venv/bin/python neural/review.py` on the machine where you are sitting.
+On the prepared M5 checkout, open `neural/Review.command`, or run
+`neural/.venv/bin/python neural/review.py` on the machine where you are sitting.
 It selects an available high port, opens the local review in your browser, and
 stops its server when you press Ctrl-C. No mic access or playback starts on load.
 The page offers the same fixture/gain across Signalsmith, neural-only, and neural
