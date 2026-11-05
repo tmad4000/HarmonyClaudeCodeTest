@@ -93,6 +93,17 @@ This addresses the distinction between containing feedback and providing a usefu
 continuous musical response. Thresholds are engineering acceptance hypotheses,
 not perceptual scores. No brain-wave or neural phase synchronization is claimed.
 
+After Jacob's direct report that suppression kills harmony even in the plain
+version, acceptance requires 100% audible-frame retention and zero detected
+dropouts, in addition to the existing singer-error, output-level, tail and mute
+checks. Previously the measured longest dropout was not enforced and a 95%
+retention threshold could allow brief losses. The detector compares 512-sample
+RMS frames against a clean-renderer oracle: an oracle frame above .002 RMS with
+more than 12 dB attenuation counts as a dropout. This only detects severe losses
+at that resolution; it does not prove perceptual continuity or preserved timbre.
+Near-end preservation and continuous intended harmony are mandatory human
+acceptance requirements too. Quiet output from suppression is never acceptance.
+
 Joint test outcome: original and responsive both pass the specified numerical
 criteria for double-talk, correlated unison, synthetic sustained vibrato and high
 fixed loop gain. Both **fail** the delay-change condition on near-end error SNR

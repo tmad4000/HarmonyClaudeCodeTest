@@ -86,6 +86,19 @@ original AIB-6q3 remains open for acceptance and robustness work.
 
 ## Responsiveness continuation
 
+### Direct suppression feedback and stricter continuity gate
+
+Jacob reports suppression still kills harmony in the plain version. This remains
+an unresolved real-use failure, irrespective of the simulations below. Required
+acceptance jointly includes preserved near-end singing, continuously audible
+intended harmony, and echo rejection; safety mute is containment, not success.
+The gate now enforces zero detected dropouts and 100% audible-frame retention.
+Reassessing the existing ten measurement rows gives the same eight passes and two
+changed-delay failures; no new inference or room test was run for this change.
+Thirty tests pass, including regression cases for a short output gap that the
+old 95% threshold permitted, near-end loss, output attenuation and safety mute.
+The parent owns the baseline M5 device-radio UI; this change does not edit it.
+
 The optional `responsive` profile and pure timestamped renderer interface are
 implemented separately from the third-view controller. See
 `../research/RENDERER-CONTRACT.md` for units, ownership and timing semantics.

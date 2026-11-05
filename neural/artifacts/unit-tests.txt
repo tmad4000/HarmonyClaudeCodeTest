@@ -1,7 +1,9 @@
 test_control_validation_rejects_bad_units_and_values (test_conditioning.ConditioningTests.test_control_validation_rejects_bad_units_and_values) ... ok
 test_external_pitch_and_gain_reach_renderer_with_sample_clock (test_conditioning.ConditioningTests.test_external_pitch_and_gain_reach_renderer_with_sample_clock) ... ok
 test_invalid_stream_configuration_or_input_is_rejected (test_conditioning.ConditioningTests.test_invalid_stream_configuration_or_input_is_rejected) ... ok
+test_short_harmony_loss_fails_even_with_good_echo_metrics (test_conditioning.ConditioningTests.test_short_harmony_loss_fails_even_with_good_echo_metrics) ... ok
 test_silence_cannot_pass_audible_continuity_metric (test_conditioning.ConditioningTests.test_silence_cannot_pass_audible_continuity_metric) ... ok
+test_singer_loss_or_safety_mute_fails_despite_continuous_output (test_conditioning.ConditioningTests.test_singer_loss_or_safety_mute_fails_despite_continuous_output) ... ok
 test_stream_reports_absolute_source_positions_without_controller_decisions (test_conditioning.ConditioningTests.test_stream_reports_absolute_source_positions_without_controller_decisions) ... ok
 test_diatonic_third_preserves_vibrato (test_core.CoreTests.test_diatonic_third_preserves_vibrato) ... ok
 test_feature_contract (test_core.CoreTests.test_feature_contract) ... ok
@@ -28,6 +30,6 @@ test_reference_is_exact_final_output (test_runtime.RuntimeTests.test_reference_i
 test_stream_buffer_is_bounded_and_no_whole_song_needed (test_runtime.RuntimeTests.test_stream_buffer_is_bounded_and_no_whole_song_needed) ... ok
 
 ----------------------------------------------------------------------
-Ran 28 tests in 0.030s
+Ran 30 tests in 0.030s
 
 OK

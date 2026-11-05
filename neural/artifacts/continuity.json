@@ -9,7 +9,8 @@
     "record": "https://zenodo.org/records/5578807"
   },
   "criteria": {
-    "audible_retention_fraction_min": 0.95,
+    "audible_retention_fraction_min": 1.0,
+    "longest_dropout_ms_max": 0.0,
     "median_level_deviation_db_max": 3,
     "near_error_snr_db_min": 20,
     "tail_dbfs_max": -60,
@@ -157,5 +158,7 @@
       "joint_numerical_pass": true
     }
   ],
-  "note": "Joint numerical acceptance only, not human musical acceptance. Oracle uses same neural renderer/profile with clean input, no room path; no singer gate. Reference cancellation failures cannot pass via safety silence."
+  "note": "Joint numerical acceptance only, not human musical acceptance. Oracle uses same neural renderer/profile with clean input, no room path; no singer gate. Reference cancellation failures cannot pass via safety silence.",
+  "criteria_reassessed_at": "2026-11-05T06:48:45.450907+00:00",
+  "criteria_reassessment_note": "Existing measured metrics re-evaluated; no new inference or physical test. Require 100% frame retention and zero detected dropouts after direct Jacob report of suppression killing harmony."
 }

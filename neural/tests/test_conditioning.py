@@ -12,7 +12,7 @@ from vocoder import (
     validate_controls,
     STREAM_PROFILES,
 )
-from continuity import compare
+from continuity import compare, joint_pass
 
 
 class SessionStub:
@@ -94,6 +94,25 @@ class ConditioningTests(unittest.TestCase):
         metrics = compare(np.zeros(4096), oracle)
         self.assertEqual(metrics["audible_retention_fraction"], 0)
         self.assertGreater(metrics["longest_dropout_ms"], 90)
+
+    def test_short_harmony_loss_fails_even_with_good_echo_metrics(self):
+        oracle = np.full(100 * HOP, 0.05)
+        actual = oracle.copy()
+        actual[40 * HOP : 42 * HOP] = 0
+        metrics = compare(actual, oracle)
+        metrics.update(near_error_snr_db=80, tail_dbfs=-100, mute=None)
+        self.assertGreater(metrics["audible_retention_fraction"], 0.95)
+        self.assertEqual(metrics["median_output_level_vs_oracle_db"], 0)
+        self.assertFalse(joint_pass(metrics))
+
+    def test_singer_loss_or_safety_mute_fails_despite_continuous_output(self):
+        oracle = np.full(4096, 0.05)
+        metrics = compare(oracle, oracle)
+        metrics.update(near_error_snr_db=80, tail_dbfs=-100, mute=None)
+        self.assertTrue(joint_pass(metrics))
+        self.assertFalse(joint_pass(dict(metrics, near_error_snr_db=0)))
+        self.assertFalse(joint_pass(dict(metrics, mute="sustained_output_overload")))
+        self.assertFalse(joint_pass(dict(metrics, median_output_level_vs_oracle_db=-6)))
 
 
 if __name__ == "__main__":

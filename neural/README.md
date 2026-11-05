@@ -9,6 +9,13 @@ physical-device latency, and real-room acceptance still pending. Do not treat
 this as a production feedback fix. The pretrained singing model is noncausal and
 licensed CC BY-NC-SA 4.0 (noncommercial).
 
+**Required acceptance:** preserve the live singer and keep the intended harmony
+continuously audible during singing, jointly with echo rejection. Jacob reports
+that suppression still kills harmony even in the plain version; simulated results
+do not resolve that real-use failure. A quiet tail achieved by erasing the singer,
+dropping harmony or latching safety mute is a failed musical outcome. Safety
+protection remains enabled. The parent owns the M5 baseline device-radio UI.
+
 ## Setup, entirely local on M5 or another Apple Silicon Mac
 
 Use an isolated clone of branch `experiment/AIB-6q3-neural-reference-harmony`.

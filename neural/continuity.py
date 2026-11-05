@@ -11,6 +11,29 @@ from vocoder import NeuralVocoder
 from validate import singing_fixture, run_case
 
 ROOT = Path(__file__).parent
+CRITERIA = {
+    "audible_retention_fraction_min": 1.0,
+    "longest_dropout_ms_max": 0.0,
+    "median_level_deviation_db_max": 3,
+    "near_error_snr_db_min": 20,
+    "tail_dbfs_max": -60,
+    "safety_mute_allowed": False,
+}
+
+
+def joint_pass(m):
+    """All requirements are mandatory; quiet output alone is never success."""
+    return bool(
+        m["audible_retention_fraction"] is not None
+        and m["audible_retention_fraction"]
+        >= CRITERIA["audible_retention_fraction_min"]
+        and m["longest_dropout_ms"] <= CRITERIA["longest_dropout_ms_max"]
+        and abs(m["median_output_level_vs_oracle_db"])
+        <= CRITERIA["median_level_deviation_db_max"]
+        and m["near_error_snr_db"] >= CRITERIA["near_error_snr_db_min"]
+        and m["tail_dbfs"] < CRITERIA["tail_dbfs_max"]
+        and m["mute"] is None
+    )
 
 
 def envelope(x):
@@ -47,13 +70,7 @@ def main():
         "host": platform.node(),
         "date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "source": source,
-        "criteria": {
-            "audible_retention_fraction_min": 0.95,
-            "median_level_deviation_db_max": 3,
-            "near_error_snr_db_min": 20,
-            "tail_dbfs_max": -60,
-            "safety_mute_allowed": False,
-        },
+        "criteria": CRITERIA,
         "rows": [],
         "note": "Joint numerical acceptance only, not human musical acceptance. Oracle uses same neural renderer/profile with clean input, no room path; no singer gate. Reference cancellation failures cannot pass via safety silence.",
     }
@@ -81,14 +98,7 @@ def main():
                 audio_stem=actual["audio_stem"],
                 oracle_stem=ideal["audio_stem"],
             )
-            m["joint_numerical_pass"] = bool(
-                m["audible_retention_fraction"] is not None
-                and m["audible_retention_fraction"] >= 0.95
-                and abs(m["median_output_level_vs_oracle_db"]) <= 3
-                and m["near_error_snr_db"] >= 20
-                and m["tail_dbfs"] < -60
-                and m["mute"] is None
-            )
+            m["joint_numerical_pass"] = joint_pass(m)
             report["rows"].append(m)
             (ROOT / "artifacts/continuity.json").write_text(
                 json.dumps(report, indent=2)
