@@ -6,6 +6,11 @@ the narrower claim that authored recurrent state can produce causal, history-dep
 musical responses. It does **not** establish that the responses are preferable to a
 simple harmony follower, or that a person experiences them as a musical partner.
 
+**Updated acceptance:** [continuous-harmony evaluation](CONTINUITY.md) supersedes any
+interpretation of the original eleven bounded-loop scenarios as eleven musical successes.
+The expanded 16-case evaluation finds 9 joint successes and 7 joint failures, including
+severe suppression in diagnostic unison and wrong-pitch output after a large gain change.
+
 ## Research and design decisions
 
 1. **Use leaky recurrent memory.** Jaeger et al., *Optimization and Applications of Echo
@@ -143,14 +148,16 @@ Machine-readable evidence is in `evidence/validation.json` and `evidence/browser
 All fixtures are generated synthetic inputs. No user audio was uploaded or recorded.
 The provided WAVs are for listening comparison; the agent did not claim to hear them.
 
-Twelve core/lifecycle tests cover tensor contracts, bounded state, causal prefix invariance, musical
+Fifteen core/lifecycle/acceptance tests cover tensor contracts, bounded state, causal prefix invariance, musical
 history dependence, contour-dependent interval choice, release, tempo change/recovery,
 harmonic pitch tracking, exact correlated near-end preservation, output-reference placement
 and latched safety, cancellation while mic permission is pending, retaining the same
 calibrated capture stream, and rejecting stale calibration results after mute.
-The recursive harness runs eleven scenarios: stable room, baseline,
+The original recursive harness ran eleven scenarios: stable room, baseline,
 no cancellation, 8× gain jump, delay jump, gradual gain/delay drift, 40× gain jump,
 soft nonlinear path, mic dropout, reference dropout and near-end only.
+It now also evaluates sustained/quiet singing, below-gate input and matched diagnostic
+unison speaker/headphone cases with actual emitted-audio joint acceptance metrics.
 
 Representative results from this M4:
 

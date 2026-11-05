@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-11-05T06:22:31.750Z",
+  "createdAt": "2026-11-05T06:34:36.258Z",
   "kind": "synthetic causal validation; not real-room acceptance",
   "environment": {
     "node": "v22.23.4",
@@ -16,7 +16,7 @@
     "noiseRms": 0.00005804678399412866,
     "residualRatio": 0.0028595465785031735,
     "mainDelayMs": 30,
-    "fitMs": 45.422625,
+    "fitMs": 69.420542,
     "accepted": true
   },
   "scenarios": [
@@ -29,10 +29,43 @@
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 80.721417,
-      "realTimeFactor": 0.010090177125,
-      "block10msComputeP99Ms": 0.448875000000001,
-      "block10msComputeMaxMs": 3.931167000000002
+      "renderComputeMs": 150.22858399999998,
+      "realTimeFactor": 0.018778572999999996,
+      "block10msComputeP99Ms": 1.1072499999999934,
+      "block10msComputeMaxMs": 8.580707999999987,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": 0.000004207691548276408,
+        "pitchTrackingVsCleanOracleP95Cents": 0.005299632110933317,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012670736759901047,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     },
     {
       "name": "baseline",
@@ -43,136 +76,701 @@
       "onsetLatencyMs": 21.499999999999964,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 62.57891699999999,
-      "realTimeFactor": 0.007822364624999998,
-      "block10msComputeP99Ms": 0.32824999999999704,
-      "block10msComputeMaxMs": 2.9503330000000005
+      "renderComputeMs": 111.73775,
+      "realTimeFactor": 0.013967218750000001,
+      "block10msComputeP99Ms": 0.7137500000000045,
+      "block10msComputeMaxMs": 5.656999999999982,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": 0.00006653108576241425,
+        "pitchTrackingVsCleanOracleP95Cents": 0.004100511763738268,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.013012472540140152,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
+    },
+    {
+      "name": "sustained",
+      "peakOutput": 0.012686061672866344,
+      "tailRms": 0,
+      "nearEndErrorDb": -61.024387622798095,
+      "outputWhileSingingFraction": 0.9956109891941443,
+      "onsetLatencyMs": 25.374999999999925,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 126.84049999999996,
+      "realTimeFactor": 0.015855062499999996,
+      "block10msComputeP99Ms": 0.8372499999999832,
+      "block10msComputeMaxMs": 1.06004200000001,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.02,
+        "levelRetentionMedianDb": 0.000043776813923478185,
+        "pitchTrackingVsCleanOracleP95Cents": 0.0036924888313194515,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012686061672866344,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
+    },
+    {
+      "name": "quiet-sustained",
+      "peakOutput": 0.001610089442692697,
+      "tailRms": 0,
+      "nearEndErrorDb": -43.57461089619985,
+      "outputWhileSingingFraction": 0.9956109891941443,
+      "onsetLatencyMs": 50.62499999999992,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 115.120542,
+      "realTimeFactor": 0.01439006775,
+      "block10msComputeP99Ms": 0.7814579999999296,
+      "block10msComputeMaxMs": 3.999832999999967,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.02,
+        "levelRetentionMedianDb": 0.0006032838091270066,
+        "pitchTrackingVsCleanOracleP95Cents": 0.03532200854223788,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.001610089442692697,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
+    },
+    {
+      "name": "quiet-under-gate",
+      "peakOutput": 0,
+      "tailRms": 0,
+      "nearEndErrorDb": -31.50732656479098,
+      "outputWhileSingingFraction": 0,
+      "onsetLatencyMs": -500.12500000000006,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 85.42995800000006,
+      "realTimeFactor": 0.010678744750000007,
+      "block10msComputeP99Ms": 0.7000840000000608,
+      "block10msComputeMaxMs": 0.8649589999999989,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": false,
+          "onsetResponsive": false,
+          "levelRetained": false,
+          "pitchResponsive": false,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 0,
+        "maxVoicedDropoutMs": 4399.9999999999945,
+        "mutedVoicedSeconds": 4.499999999999992,
+        "levelRetentionMedianDb": null,
+        "pitchTrackingVsCleanOracleP95Cents": null,
+        "onsetLatencyMaxMs": null,
+        "onsetMissing": true,
+        "postStopTailRms": 0,
+        "peakOutput": 0,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "below voice gate"
+    },
+    {
+      "name": "unison-stress",
+      "peakOutput": 0.012616181746125221,
+      "tailRms": 0,
+      "nearEndErrorDb": -61.06708223954211,
+      "outputWhileSingingFraction": 0.18222728409122477,
+      "onsetLatencyMs": 22.87499999999998,
+      "fault": "Playback-correlated residual: recalibrate or use headphones",
+      "faultAtSeconds": 1.339875,
+      "renderComputeMs": 135.45879100000002,
+      "realTimeFactor": 0.016932348875000003,
+      "block10msComputeP99Ms": 0.8694169999999986,
+      "block10msComputeMaxMs": 8.96920799999998,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": false,
+          "onsetResponsive": true,
+          "levelRetained": false,
+          "pitchResponsive": true,
+          "notLatchedMuted": false
+        },
+        "actualOutputCoverage": 0.16818181818181818,
+        "maxVoicedDropoutMs": 3660.0000000000027,
+        "mutedVoicedSeconds": 3.680000000000003,
+        "levelRetentionMedianDb": -198.541450985479,
+        "pitchTrackingVsCleanOracleP95Cents": 3.5773837225860916e-7,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012616181746125221,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "diagnostic forced-unison renderer"
+    },
+    {
+      "name": "unison-headphones-control",
+      "peakOutput": 0.012634610757231712,
+      "tailRms": 0,
+      "nearEndErrorDb": -61.10098846513766,
+      "outputWhileSingingFraction": 0.9956109891941443,
+      "onsetLatencyMs": 22.87499999999998,
+      "fault": null,
+      "faultAtSeconds": null,
+      "renderComputeMs": 84.53354200000001,
+      "realTimeFactor": 0.010566692750000002,
+      "block10msComputeP99Ms": 0.28875000000005,
+      "block10msComputeMaxMs": 0.39445899999998346,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.02,
+        "levelRetentionMedianDb": -0.00003486243659590057,
+        "pitchTrackingVsCleanOracleP95Cents": 3.748262145109038e-7,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012634610757231712,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "diagnostic forced-unison renderer"
     },
     {
       "name": "no-cancellation",
-      "peakOutput": 0.012765650637447834,
+      "peakOutput": 0.012766807340085506,
       "tailRms": 0,
-      "nearEndErrorDb": -20.29001136595449,
+      "nearEndErrorDb": -20.289291627101957,
       "outputWhileSingingFraction": 0.975877563431197,
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 39.32054199999999,
-      "realTimeFactor": 0.004915067749999998,
-      "block10msComputeP99Ms": 0.1220000000000141,
-      "block10msComputeMaxMs": 0.1818749999999909
+      "renderComputeMs": 69.18029200000001,
+      "realTimeFactor": 0.0086475365,
+      "block10msComputeP99Ms": 0.20825000000002092,
+      "block10msComputeMaxMs": 0.31204200000001947,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": false,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": 0.0359298621186885,
+        "pitchTrackingVsCleanOracleP95Cents": 161.31121355069595,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012766807340085506,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     },
     {
       "name": "gain-jump",
-      "peakOutput": 0.016717584803700447,
-      "tailRms": 3.763601770215608e-45,
-      "nearEndErrorDb": -7.802389841391543,
+      "peakOutput": 0.01670505851507187,
+      "tailRms": 3.7650525916287473e-45,
+      "nearEndErrorDb": -7.80265905737827,
       "outputWhileSingingFraction": 0.983918375620798,
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 74.11191600000001,
-      "realTimeFactor": 0.009263989500000002,
-      "block10msComputeP99Ms": 0.33541600000000926,
-      "block10msComputeMaxMs": 3.85191599999996
+      "renderComputeMs": 149.88245799999993,
+      "realTimeFactor": 0.018735307249999993,
+      "block10msComputeP99Ms": 0.8622090000001208,
+      "block10msComputeMaxMs": 4.400125000000116,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": false,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.04,
+        "levelRetentionMedianDb": 0.00015555002704796035,
+        "pitchTrackingVsCleanOracleP95Cents": 2101.3721971499135,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 3.7650525916287473e-45,
+        "peakOutput": 0.01670505851507187,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     },
     {
       "name": "delay-jump",
-      "peakOutput": 0.012922633439302444,
+      "peakOutput": 0.01292392984032631,
       "tailRms": 0,
-      "nearEndErrorDb": -22.1191930715436,
+      "nearEndErrorDb": -22.11931482951603,
       "outputWhileSingingFraction": 0.975877563431197,
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 82.64029099999999,
-      "realTimeFactor": 0.010330036374999999,
-      "block10msComputeP99Ms": 0.3416670000000295,
-      "block10msComputeMaxMs": 5.443416000000013
+      "renderComputeMs": 153.6836249999999,
+      "realTimeFactor": 0.019210453124999985,
+      "block10msComputeP99Ms": 0.8562079999999241,
+      "block10msComputeMaxMs": 8.063125000000127,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": 0.00011530233985074825,
+        "pitchTrackingVsCleanOracleP95Cents": 9.674922935813868,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.01292392984032631,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     },
     {
       "name": "gradual-drift",
-      "peakOutput": 0.012842606753110886,
+      "peakOutput": 0.012840963900089264,
       "tailRms": 0,
-      "nearEndErrorDb": -23.28754066323663,
+      "nearEndErrorDb": -23.2855708655321,
       "outputWhileSingingFraction": 0.975877563431197,
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 66.157333,
-      "realTimeFactor": 0.008269666625,
-      "block10msComputeP99Ms": 0.33412500000002865,
-      "block10msComputeMaxMs": 0.9025000000000318
+      "renderComputeMs": 118.70000000000005,
+      "realTimeFactor": 0.014837500000000005,
+      "block10msComputeP99Ms": 0.7364580000000842,
+      "block10msComputeMaxMs": 1.7220830000001115,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": 0.00023970292959682235,
+        "pitchTrackingVsCleanOracleP95Cents": 2.3503900514093345,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012840963900089264,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     },
     {
       "name": "extreme-gain",
-      "peakOutput": 0.026580994948744774,
+      "peakOutput": 0.026579758152365685,
       "tailRms": 0,
-      "nearEndErrorDb": 8.086171000146924,
+      "nearEndErrorDb": 8.0861322111064,
       "outputWhileSingingFraction": 0.7244163654177506,
       "onsetLatencyMs": 25.374999999999925,
       "fault": "Playback-correlated residual: recalibrate or use headphones",
       "faultAtSeconds": 3.839875,
-      "renderComputeMs": 68.06591699999996,
-      "realTimeFactor": 0.008508239624999995,
-      "block10msComputeP99Ms": 0.33587499999998727,
-      "block10msComputeMaxMs": 3.9095419999999876
+      "renderComputeMs": 129.52658300000007,
+      "realTimeFactor": 0.01619082287500001,
+      "block10msComputeP99Ms": 0.790625000000091,
+      "block10msComputeMaxMs": 5.221583999999893,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": false,
+          "onsetResponsive": false,
+          "levelRetained": true,
+          "pitchResponsive": false,
+          "notLatchedMuted": false
+        },
+        "actualOutputCoverage": 0.7278481012658228,
+        "maxVoicedDropoutMs": 560.0000000000001,
+        "mutedVoicedSeconds": 1.0000000000000004,
+        "levelRetentionMedianDb": -0.00006639676835922652,
+        "pitchTrackingVsCleanOracleP95Cents": 1878.4984810214667,
+        "onsetLatencyMaxMs": null,
+        "onsetMissing": true,
+        "postStopTailRms": 0,
+        "peakOutput": 0.026579758152365685,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "emergency containment"
     },
     {
       "name": "nonlinear-path",
-      "peakOutput": 0.01266954094171524,
+      "peakOutput": 0.012670867145061493,
       "tailRms": 0,
-      "nearEndErrorDb": -60.69134155517098,
+      "nearEndErrorDb": -60.70815518097198,
       "outputWhileSingingFraction": 0.975877563431197,
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 68.67666700000007,
-      "realTimeFactor": 0.008584583375000008,
-      "block10msComputeP99Ms": 0.35325000000000273,
-      "block10msComputeMaxMs": 0.7634590000000117
+      "renderComputeMs": 116.1257079999998,
+      "realTimeFactor": 0.014515713499999975,
+      "block10msComputeP99Ms": 0.7282090000001062,
+      "block10msComputeMaxMs": 0.8463329999999587,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": 0.00008101232233238602,
+        "pitchTrackingVsCleanOracleP95Cents": 0.004893140258843687,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012670867145061493,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     },
     {
       "name": "dropout",
-      "peakOutput": 0.012635815888643265,
+      "peakOutput": 0.012636234052479267,
       "tailRms": 0,
-      "nearEndErrorDb": -3.6385485247060863,
+      "nearEndErrorDb": -3.638548508906059,
       "outputWhileSingingFraction": 0.5541403425791411,
       "onsetLatencyMs": 25.374999999999925,
       "fault": "Input/reference unavailable",
       "faultAtSeconds": 3.000125,
-      "renderComputeMs": 52.92750000000001,
-      "realTimeFactor": 0.006615937500000001,
-      "block10msComputeP99Ms": 0.32037500000001273,
-      "block10msComputeMaxMs": 0.3765419999999722
+      "renderComputeMs": 126.6232500000001,
+      "realTimeFactor": 0.015827906250000013,
+      "block10msComputeP99Ms": 0.8463329999999587,
+      "block10msComputeMaxMs": 7.07445800000005,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": false,
+          "onsetResponsive": false,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": false
+        },
+        "actualOutputCoverage": 0.5632911392405063,
+        "maxVoicedDropoutMs": 840.0000000000005,
+        "mutedVoicedSeconds": 1.600000000000001,
+        "levelRetentionMedianDb": -0.00047447892314266113,
+        "pitchTrackingVsCleanOracleP95Cents": 0.0042599279048261,
+        "onsetLatencyMaxMs": null,
+        "onsetMissing": true,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012636234052479267,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "emergency containment"
     },
     {
       "name": "reference-dropout",
-      "peakOutput": 0.012635362334549427,
+      "peakOutput": 0.012634501792490482,
       "tailRms": 0,
-      "nearEndErrorDb": -3.6385490063964228,
+      "nearEndErrorDb": -3.6385480724245856,
       "outputWhileSingingFraction": 0.5541403425791411,
       "onsetLatencyMs": 25.374999999999925,
       "fault": "Input/reference unavailable",
       "faultAtSeconds": 3.000125,
-      "renderComputeMs": 54.625375000000076,
-      "realTimeFactor": 0.006828171875000009,
-      "block10msComputeP99Ms": 0.32045800000003055,
-      "block10msComputeMaxMs": 0.38845900000001166
+      "renderComputeMs": 107.10424999999987,
+      "realTimeFactor": 0.013388031249999982,
+      "block10msComputeP99Ms": 0.7027499999999236,
+      "block10msComputeMaxMs": 1.2289580000001479,
+      "joint": {
+        "jointSuccess": false,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": false,
+          "onsetResponsive": false,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": false
+        },
+        "actualOutputCoverage": 0.5632911392405063,
+        "maxVoicedDropoutMs": 840.0000000000005,
+        "mutedVoicedSeconds": 1.600000000000001,
+        "levelRetentionMedianDb": -0.00047538088152638934,
+        "pitchTrackingVsCleanOracleP95Cents": 0.0035477374098036307,
+        "onsetLatencyMaxMs": null,
+        "onsetMissing": true,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012634501792490482,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "emergency containment"
     },
     {
       "name": "near-only",
-      "peakOutput": 0.01267032977193594,
+      "peakOutput": 0.012670844793319702,
       "tailRms": 0,
-      "nearEndErrorDb": -61.04637792691526,
+      "nearEndErrorDb": -61.099462987636535,
       "outputWhileSingingFraction": 0.975877563431197,
       "onsetLatencyMs": 25.374999999999925,
       "fault": null,
       "faultAtSeconds": null,
-      "renderComputeMs": 28.60895800000003,
-      "realTimeFactor": 0.0035761197500000035,
-      "block10msComputeP99Ms": 0.062082999999915955,
-      "block10msComputeMaxMs": 0.10183400000005349
+      "renderComputeMs": 77.01887499999998,
+      "realTimeFactor": 0.009627359374999998,
+      "block10msComputeP99Ms": 0.24383299999999508,
+      "block10msComputeMaxMs": 0.9128749999999854,
+      "joint": {
+        "jointSuccess": true,
+        "checks": {
+          "boundedAndReleased": true,
+          "continuous": true,
+          "onsetResponsive": true,
+          "levelRetained": true,
+          "pitchResponsive": true,
+          "notLatchedMuted": true
+        },
+        "actualOutputCoverage": 1,
+        "maxVoicedDropoutMs": 0,
+        "mutedVoicedSeconds": 0.06,
+        "levelRetentionMedianDb": -0.000027016283202624705,
+        "pitchTrackingVsCleanOracleP95Cents": 0.0035752592843607545,
+        "onsetLatencyMaxMs": 40.000000000000036,
+        "onsetMissing": false,
+        "postStopTailRms": 0,
+        "peakOutput": 0.012670844793319702,
+        "criteria": {
+          "windowMs": 20,
+          "startupBudgetMs": 100,
+          "minCoverage": 0.95,
+          "maxVoicedDropoutMs": 80,
+          "absoluteDigitalRmsFloor": 0.00025,
+          "minRelativeBlockLevel": 0.35,
+          "minMedianLevelDb": -6,
+          "maxTrackingP95Cents": 50
+        },
+        "interpretation": "Joint musical availability proxy, not proof of subjective quality or physical audibility; containment by mute is a joint failure."
+      },
+      "outputWhileSingingFractionMeaning": "Legacy requested-control-gain statistic; use joint.actualOutputCoverage for emitted-audio acceptance",
+      "fixtureClass": "musical operation"
     }
   ],
   "controller": {
@@ -194,6 +792,84 @@
     "Sparse 48-tap room fit may reject dense/reverberant rooms",
     "Frozen path must be recalibrated after device/room/volume changes"
   ],
+  "jointAcceptance": {
+    "successes": [
+      "stable",
+      "baseline",
+      "sustained",
+      "quiet-sustained",
+      "unison-headphones-control",
+      "delay-jump",
+      "gradual-drift",
+      "nonlinear-path",
+      "near-only"
+    ],
+    "failures": [
+      {
+        "name": "quiet-under-gate",
+        "failedChecks": [
+          "continuous",
+          "onsetResponsive",
+          "levelRetained",
+          "pitchResponsive"
+        ],
+        "fault": null
+      },
+      {
+        "name": "unison-stress",
+        "failedChecks": [
+          "continuous",
+          "levelRetained",
+          "notLatchedMuted"
+        ],
+        "fault": "Playback-correlated residual: recalibrate or use headphones"
+      },
+      {
+        "name": "no-cancellation",
+        "failedChecks": [
+          "pitchResponsive"
+        ],
+        "fault": null
+      },
+      {
+        "name": "gain-jump",
+        "failedChecks": [
+          "pitchResponsive"
+        ],
+        "fault": null
+      },
+      {
+        "name": "extreme-gain",
+        "failedChecks": [
+          "continuous",
+          "onsetResponsive",
+          "pitchResponsive",
+          "notLatchedMuted"
+        ],
+        "fault": "Playback-correlated residual: recalibrate or use headphones"
+      },
+      {
+        "name": "dropout",
+        "failedChecks": [
+          "continuous",
+          "onsetResponsive",
+          "notLatchedMuted"
+        ],
+        "fault": "Input/reference unavailable"
+      },
+      {
+        "name": "reference-dropout",
+        "failedChecks": [
+          "continuous",
+          "onsetResponsive",
+          "notLatchedMuted"
+        ],
+        "fault": "Input/reference unavailable"
+      }
+    ],
+    "note": "A bounded/silent tail is not musical success. Emergency containment and known limitations remain visible joint failures. No production safety threshold was relaxed."
+  },
+  "timingScope": "Measured loop timing now includes the clean-input oracle engine/renderer and fixture bookkeeping; not an isolated production CPU benchmark.",
   "correlatedUnisonSubtractionErrorRms": 0.000005568563764600953,
-  "memoryRssMiB": 78.875
+  "memoryRssMiB": 92.59375
 }

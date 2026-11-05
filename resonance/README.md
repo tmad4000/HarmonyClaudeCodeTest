@@ -5,8 +5,10 @@ weights shape a lower voice in response to pitch contour, energy, articulation a
 musical history. A simple additive synthesizer renders it. This is distinct from the
 second experiment's pretrained PC-NSF-HiFiGAN waveform renderer.
 
-**Status:** runnable experimental prototype; synthetic and browser integration checks
-pass. Real singing, physical latency, and subjective musical quality are not accepted yet.
+**Status:** runnable experimental prototype with known joint-acceptance failures.
+Core and browser integration checks pass, but diagnostic correlated unison is muted
+and a large path-gain change can produce the wrong pitch. Silence is not success.
+Real singing, physical latency, and subjective musical quality are not accepted yet.
 No model inference or microphone audio leaves the browser. No packages to install.
 
 ## Run
@@ -62,6 +64,7 @@ subclass only supplies the initial offline mode synchronously; real sessions sta
 Artifacts:
 
 - [Experiment, research and limits](docs/EXPERIMENT.md)
+- [Continuous-harmony acceptance and known failures](docs/CONTINUITY.md)
 - [Authored tensors](models/authored.json), [reproducible coefficient source](models/author.mjs)
 - [Recursive-loop metrics](evidence/validation.json), [browser metrics](evidence/browser.json)
 - [Partner mix](evidence/partner-mix.wav), [baseline mix](evidence/baseline-mix.wav)
