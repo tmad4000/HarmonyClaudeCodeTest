@@ -1,0 +1,7 @@
+{
+  "source_commit": "4aefe8c554de963faa42a404ebc8f0dc74edb884",
+  "source_path": "resonance/evidence/frame-controls-v1.json",
+  "source_pr": "https://github.com/tmad4000/HarmonyClaudeCodeTest/pull/2",
+  "sha256": "13872b196ed0f58bd0567b062ef4d4e7e110398d0dbb5e2e6b7accf36932f4ae",
+  "purpose": "Synthetic controller-side contract fixture only; not microphone data or neural performance evidence"
+}

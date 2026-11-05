@@ -1,5 +1,16 @@
 # Measured result — experimental, not accepted for the room
 
+## Controller packet adapter
+
+Controller commit `4aefe8c` supplied a 12-frame synthetic v1 packet. The Python
+consumer now validates epoch/grid/causal availability, preserves immutable repeated
+controls, bounds its cache with explicit release ACK, and rejects missing/future
+frames or revisions without a musical fallback. Thirty-nine local tests pass,
+including nine adapter regressions. The controller's five contract tests also
+pass when run read-only in its own workspace. No controller policy was copied.
+The real ONNX boundary smoke is recorded separately in
+`controller-adapter-smoke.json`; this is not live transport or physical acceptance.
+
 The alternate neural waveform engine runs and produces singing harmonies on Apple
 Silicon. It is **not yet a transparent low-latency live choir or a room-robust
 feedback fix**. Do not replace the working app. Human listening is pending.

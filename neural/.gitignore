@@ -1,6 +1,6 @@
 .venv/
 models/
-fixtures/
+/fixtures/
 __pycache__/
 *.pyc
 artifacts/*.wav

@@ -16,6 +16,13 @@ do not resolve that real-use failure. A quiet tail achieved by erasing the singe
 dropping harmony or latching safety mute is a failed musical outcome. Safety
 protection remains enabled. The parent owns the M5 baseline device-radio UI.
 
+The controller PR #2 v1 handoff now has a bounded Python `FrameControlCache`
+adapter. It validates source clock/availability and immutable controls, then
+supplies pure pitch/gain lookup to the renderer. See
+[the contract](research/RENDERER-CONTRACT.md) and run
+`neural/.venv/bin/python neural/adapter_smoke.py` for the offline ONNX smoke.
+Live controller transport and causal source-feature production remain unwired.
+
 ## Setup, entirely local on M5 or another Apple Silicon Mac
 
 Use an isolated clone of branch `experiment/AIB-6q3-neural-reference-harmony`.

@@ -5,6 +5,15 @@ test_short_harmony_loss_fails_even_with_good_echo_metrics (test_conditioning.Con
 test_silence_cannot_pass_audible_continuity_metric (test_conditioning.ConditioningTests.test_silence_cannot_pass_audible_continuity_metric) ... ok
 test_singer_loss_or_safety_mute_fails_despite_continuous_output (test_conditioning.ConditioningTests.test_singer_loss_or_safety_mute_fails_despite_continuous_output) ... ok
 test_stream_reports_absolute_source_positions_without_controller_decisions (test_conditioning.ConditioningTests.test_stream_reports_absolute_source_positions_without_controller_decisions) ... ok
+test_bounded_cache_requires_explicit_release_and_keeps_queued_copy (test_control_adapter.AdapterTests.test_bounded_cache_requires_explicit_release_and_keeps_queued_copy) ... ok
+test_epoch_causality_grid_and_receiver_availability (test_control_adapter.AdapterTests.test_epoch_causality_grid_and_receiver_availability) ... ok
+test_explicit_preroll_does_not_pad_missing_positive_frames (test_control_adapter.AdapterTests.test_explicit_preroll_does_not_pad_missing_positive_frames) ... ok
+test_input_and_returned_arrays_cannot_mutate_cached_or_queued_values (test_control_adapter.AdapterTests.test_input_and_returned_arrays_cannot_mutate_cached_or_queued_values) ... ok
+test_invalid_gain_pitch_shape_and_preroll_are_rejected (test_control_adapter.AdapterTests.test_invalid_gain_pitch_shape_and_preroll_are_rejected) ... ok
+test_packet_reaches_overlapping_renderer_without_rms_rescaling (test_control_adapter.AdapterTests.test_packet_reaches_overlapping_renderer_without_rms_rescaling) ... ok
+test_pinned_controller_packet_preserves_values_and_request_order (test_control_adapter.AdapterTests.test_pinned_controller_packet_preserves_values_and_request_order) ... ok
+test_revisions_and_watermark_regression_fail_atomically (test_control_adapter.AdapterTests.test_revisions_and_watermark_regression_fail_atomically) ... ok
+test_unavailable_controls_abort_before_onnx_and_do_not_fallback (test_control_adapter.AdapterTests.test_unavailable_controls_abort_before_onnx_and_do_not_fallback) ... ok
 test_diatonic_third_preserves_vibrato (test_core.CoreTests.test_diatonic_third_preserves_vibrato) ... ok
 test_feature_contract (test_core.CoreTests.test_feature_contract) ... ok
 test_fir_doubletalk_correlated_unison (test_core.CoreTests.test_fir_doubletalk_correlated_unison) ... ok
@@ -30,6 +39,6 @@ test_reference_is_exact_final_output (test_runtime.RuntimeTests.test_reference_i
 test_stream_buffer_is_bounded_and_no_whole_song_needed (test_runtime.RuntimeTests.test_stream_buffer_is_bounded_and_no_whole_song_needed) ... ok
 
 ----------------------------------------------------------------------
-Ran 30 tests in 0.030s
+Ran 39 tests in 0.037s
 
 OK
