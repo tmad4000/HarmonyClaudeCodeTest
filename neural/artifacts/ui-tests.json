@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "scenarios": 11,
+  "no_autoplay": true,
+  "mobile_overflow": false,
+  "audio_endpoints": 19,
+  "console_errors": []
+}

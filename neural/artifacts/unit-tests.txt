@@ -1,0 +1,25 @@
+test_diatonic_third_preserves_vibrato (test_core.CoreTests.test_diatonic_third_preserves_vibrato) ... ok
+test_feature_contract (test_core.CoreTests.test_feature_contract) ... ok
+test_fir_doubletalk_correlated_unison (test_core.CoreTests.test_fir_doubletalk_correlated_unison) ... ok
+test_independent_probe_identification (test_core.CoreTests.test_independent_probe_identification) ... ok
+test_pitch_sustained_vibrato_and_octaves (test_core.CoreTests.test_pitch_sustained_vibrato_and_octaves) ... ok
+test_post_limiter_reference_and_latching_mute (test_core.CoreTests.test_post_limiter_reference_and_latching_mute) ... ok
+test_reference_shape_and_nonfinite_rejected (test_core.CoreTests.test_reference_shape_and_nonfinite_rejected) ... ok
+test_timeline_fractional_offset_and_gap (test_core.CoreTests.test_timeline_fractional_offset_and_gap) ... ok
+test_fixed_path_preserves_correlated_singer_without_mute (test_measured.MeasuredTests.test_fixed_path_preserves_correlated_singer_without_mute) ... ok
+test_full_matrix (test_measured.MeasuredTests.test_full_matrix) ... ok
+test_high_gain_baselines_require_safety_and_reference_does_not (test_measured.MeasuredTests.test_high_gain_baselines_require_safety_and_reference_does_not) ... ok
+test_mismatch_limit_is_visible_not_hidden_by_a_gate (test_measured.MeasuredTests.test_mismatch_limit_is_visible_not_hidden_by_a_gate) ... ok
+test_silent_user_tail_with_reference (test_measured.MeasuredTests.test_silent_user_tail_with_reference) ... ok
+test_singer_only_no_phantom_echo_subtraction (test_measured.MeasuredTests.test_singer_only_no_phantom_echo_subtraction) ... ok
+test_device_dropout_mutes_and_records_zero_reference (test_runtime.RuntimeTests.test_device_dropout_mutes_and_records_zero_reference) ... ok
+test_input_queue_overload_latches (test_runtime.RuntimeTests.test_input_queue_overload_latches) ... ok
+test_output_starvation_latches (test_runtime.RuntimeTests.test_output_starvation_latches) ... ok
+test_reference_gap_latches (test_runtime.RuntimeTests.test_reference_gap_latches) ... ok
+test_reference_is_exact_final_output (test_runtime.RuntimeTests.test_reference_is_exact_final_output) ... ok
+test_stream_buffer_is_bounded_and_no_whole_song_needed (test_runtime.RuntimeTests.test_stream_buffer_is_bounded_and_no_whole_song_needed) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.019s
+
+OK
