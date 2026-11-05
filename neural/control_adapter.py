@@ -42,7 +42,7 @@ def integer(value):
     return (
         isinstance(value, Integral)
         and not isinstance(value, (bool, np.bool_))
-        and abs(value) <= MAX_SAFE_INTEGER
+        and abs(int(value)) <= MAX_SAFE_INTEGER
     )
 
 
@@ -55,11 +55,12 @@ def watermark_valid(value):
 
 
 def finite(value):
-    return (
-        isinstance(value, Real)
-        and not isinstance(value, (bool, np.bool_))
-        and math.isfinite(value)
-    )
+    if not isinstance(value, Real) or isinstance(value, (bool, np.bool_)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 class FrameControlCache:
@@ -75,12 +76,20 @@ class FrameControlCache:
             fail("FORMAT", "Provide a capture epoch ID")
         if not integer(max_frames) or not 1 <= max_frames <= 8192:
             fail("FORMAT", "Cache capacity must be 1..8192 frames")
-        self.clock_id = clock_id
-        self.max_frames = max_frames
+        self._clock_id = clock_id
+        self._max_frames = max_frames
         self._frames = {}
         self._available = 0
         self._released_before = 256
         self._lock = RLock()
+
+    @property
+    def clock_id(self):
+        return self._clock_id
+
+    @property
+    def max_frames(self):
+        return self._max_frames
 
     @property
     def available_through_sample(self):

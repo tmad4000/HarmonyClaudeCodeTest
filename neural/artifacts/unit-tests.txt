@@ -6,6 +6,7 @@ test_silence_cannot_pass_audible_continuity_metric (test_conditioning.Conditioni
 test_singer_loss_or_safety_mute_fails_despite_continuous_output (test_conditioning.ConditioningTests.test_singer_loss_or_safety_mute_fails_despite_continuous_output) ... ok
 test_stream_reports_absolute_source_positions_without_controller_decisions (test_conditioning.ConditioningTests.test_stream_reports_absolute_source_positions_without_controller_decisions) ... ok
 test_bounded_cache_requires_explicit_release_and_keeps_queued_copy (test_control_adapter.AdapterTests.test_bounded_cache_requires_explicit_release_and_keeps_queued_copy) ... ok
+test_epoch_and_capacity_cannot_be_rebound_in_place (test_control_adapter.AdapterTests.test_epoch_and_capacity_cannot_be_rebound_in_place) ... ok
 test_epoch_causality_grid_and_receiver_availability (test_control_adapter.AdapterTests.test_epoch_causality_grid_and_receiver_availability) ... ok
 test_explicit_preroll_does_not_pad_missing_positive_frames (test_control_adapter.AdapterTests.test_explicit_preroll_does_not_pad_missing_positive_frames) ... ok
 test_input_and_returned_arrays_cannot_mutate_cached_or_queued_values (test_control_adapter.AdapterTests.test_input_and_returned_arrays_cannot_mutate_cached_or_queued_values) ... ok
@@ -39,6 +40,6 @@ test_reference_is_exact_final_output (test_runtime.RuntimeTests.test_reference_i
 test_stream_buffer_is_bounded_and_no_whole_song_needed (test_runtime.RuntimeTests.test_stream_buffer_is_bounded_and_no_whole_song_needed) ... ok
 
 ----------------------------------------------------------------------
-Ran 39 tests in 0.037s
+Ran 40 tests in 0.035s
 
 OK

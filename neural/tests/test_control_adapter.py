@@ -85,6 +85,7 @@ class AdapterTests(unittest.TestCase):
             ("gain_multiplier", [1.01] * 12, "RANGE"),
             ("target_f0_hz", [49] * 12, "RANGE"),
             ("target_f0_hz", [2501] * 12, "RANGE"),
+            ("target_f0_hz", [10**1000] * 12, "RANGE"),
             ("target_f0_hz", [], "SHAPE"),
         ]:
             p = copy.deepcopy(self.packet)
@@ -115,6 +116,14 @@ class AdapterTests(unittest.TestCase):
             p[key] = p[key][:1]
         p["available_through_sample"] = 512
         self.assert_code("ORDER", lambda: self.ingest(p))
+
+    def test_epoch_and_capacity_cannot_be_rebound_in_place(self):
+        self.ingest()
+        with self.assertRaises(AttributeError):
+            self.cache.clock_id = "another-epoch"
+        with self.assertRaises(AttributeError):
+            self.cache.max_frames = 1000000
+        self.assert_code("CLOCK", lambda: self.cache.lookup([np.int64(-(2**63))]))
 
     def test_bounded_cache_requires_explicit_release_and_keeps_queued_copy(self):
         cache = FrameControlCache(self.packet["clock_id"], max_frames=12)
