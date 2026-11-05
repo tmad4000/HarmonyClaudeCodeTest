@@ -65,6 +65,7 @@ Artifacts:
 
 - [Experiment, research and limits](docs/EXPERIMENT.md)
 - [Continuous-harmony acceptance and known failures](docs/CONTINUITY.md)
+- [Proposed singing-renderer control contract](docs/CONTROL_CONTRACT.md) (not yet integrated)
 - [Authored tensors](models/authored.json), [reproducible coefficient source](models/author.mjs)
 - [Recursive-loop metrics](evidence/validation.json), [browser metrics](evidence/browser.json)
 - [Partner mix](evidence/partner-mix.wav), [baseline mix](evidence/baseline-mix.wav)

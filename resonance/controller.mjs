@@ -39,7 +39,7 @@ export class Pulse {
 export class Partner {
  constructor(model,{baseline=false,latency=.035}={}){
   this.net=new RecurrentNetwork(model);this.pulse=new Pulse();this.baseline=baseline;this.latency=latency;
-  this.lastPitch=null;this.velocity=0;this.pitch=60;this.lastRms=0;this.wasVoiced=false;this.age=0;this.silence=10;this.interval=-7;this.switchAge=1;this.gain=0;
+  this.lastPitch=null;this.velocity=0;this.pitch=60;this.lastRms=0;this.wasVoiced=false;this.age=0;this.silence=10;this.interval=-7;this.switchAge=1;this.gain=0;this.gainMultiplier=0;
  }
  step(f,dt=.01){
   const voiced=!!f.voiced&&Number.isFinite(f.midi)&&f.confidence>.65;
@@ -62,9 +62,14 @@ export class Partner {
   }
   // Explicit release and confidence safety scaffolding; no invented future notes.
   const targetGain=voiced?clamp(f.rms*.48,0,.065)*(this.baseline?1:.78+.22*(z[4]+1)/2):0;
-  this.gain+=(1-Math.exp(-dt/(voiced?.018:.045)))*(targetGain-this.gain);
-  if(this.silence>.22)this.gain=0;
+  const envelopeRate=1-Math.exp(-dt/(voiced?.018:.045));
+  this.gain+=envelopeRate*(targetGain-this.gain);
+  // Separate dimensionless renderer mix. Source loudness is already carried by
+  // vocoder conditioning; never pass the oscillator's RMS-scaled gain as this value.
+  const targetMix=voiced?.45*(this.baseline?1:.78+.22*(z[4]+1)/2):0;
+  this.gainMultiplier+=envelopeRate*(targetMix-this.gainMultiplier);
+  if(this.silence>.22){this.gain=0;this.gainMultiplier=0;}
   this.lastRms=f.rms;this.wasVoiced=voiced;
-  return {midi:this.pitch,gain:this.gain,interval:this.interval,onset,voiced,anticipation:z[0],expression:z[4],pulse,phraseAge:this.age,state:Array.from(this.net.h)};
+  return {midi:this.pitch,gain:this.gain,gainMultiplier:this.gainMultiplier,interval:this.interval,onset,voiced,anticipation:z[0],expression:z[4],pulse,phraseAge:this.age,state:Array.from(this.net.h)};
  }
 }
