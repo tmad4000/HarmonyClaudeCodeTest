@@ -72,7 +72,7 @@ checkout was read back at `d5d0856` during this run and was not modified.
 
 ## Verified and still open
 
-20 deterministic core/runtime/evidence tests pass: correlated unison preservation, probe
+21 deterministic core/runtime/evidence tests pass: correlated unison preservation, probe
 identification, pitch, feature shapes, bounded stream buffers, actual post-limiter
 reference, fractional timestamp offsets, reference gaps, device dropout,
 starvation, queue overload and nonfinite output. UI checks cover 11 scenarios,

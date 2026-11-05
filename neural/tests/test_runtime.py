@@ -86,6 +86,21 @@ class RuntimeTests(unittest.TestCase):
             False,
         )
         self.assertEqual(s.safety.reason, "reference_timeline_gap")
+        self.assertEqual(out.sum(), 0)
+
+    def test_invalid_clock_mutes_before_output(self):
+        s = self.session()
+        s.outq.put(np.ones(HOP))
+        out = np.ones((HOP, 1), dtype=np.float32)
+        s.callback(
+            np.zeros_like(out),
+            out,
+            HOP,
+            SimpleNamespace(outputBufferDacTime=0, inputBufferAdcTime=0),
+            False,
+        )
+        self.assertEqual(s.safety.reason, "invalid_device_timestamps")
+        self.assertEqual(out.sum(), 0)
 
     def test_input_queue_overload_latches(self):
         s = self.session()

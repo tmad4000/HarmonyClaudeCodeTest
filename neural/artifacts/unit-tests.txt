@@ -14,12 +14,13 @@ test_silent_user_tail_with_reference (test_measured.MeasuredTests.test_silent_us
 test_singer_only_no_phantom_echo_subtraction (test_measured.MeasuredTests.test_singer_only_no_phantom_echo_subtraction) ... ok
 test_device_dropout_mutes_and_records_zero_reference (test_runtime.RuntimeTests.test_device_dropout_mutes_and_records_zero_reference) ... ok
 test_input_queue_overload_latches (test_runtime.RuntimeTests.test_input_queue_overload_latches) ... ok
+test_invalid_clock_mutes_before_output (test_runtime.RuntimeTests.test_invalid_clock_mutes_before_output) ... ok
 test_output_starvation_latches (test_runtime.RuntimeTests.test_output_starvation_latches) ... ok
 test_reference_gap_latches (test_runtime.RuntimeTests.test_reference_gap_latches) ... ok
 test_reference_is_exact_final_output (test_runtime.RuntimeTests.test_reference_is_exact_final_output) ... ok
 test_stream_buffer_is_bounded_and_no_whole_song_needed (test_runtime.RuntimeTests.test_stream_buffer_is_bounded_and_no_whole_song_needed) ... ok
 
 ----------------------------------------------------------------------
-Ran 20 tests in 0.019s
+Ran 21 tests in 0.018s
 
 OK

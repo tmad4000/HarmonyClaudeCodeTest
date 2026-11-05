@@ -50,6 +50,8 @@ class LiveSession:
         self.timings = []
         self.status_flags = []
         self.callback_count = 0
+        self.last_adc_time = float("-inf")
+        self.last_dac_time = float("-inf")
         self.cal_ref = []
         self.cal_mic = []
         self.probe_pos = 0
@@ -90,6 +92,17 @@ class LiveSession:
             self.status_flags.append(str(status))
             self.safety.trip("audio_device_dropout")
             self.state = "muted"
+        if (
+            not np.isfinite(clock.inputBufferAdcTime)
+            or not np.isfinite(clock.outputBufferDacTime)
+            or clock.inputBufferAdcTime <= max(0, self.last_adc_time)
+            or clock.outputBufferDacTime <= max(0, self.last_dac_time)
+        ):
+            self.safety.trip("invalid_device_timestamps")
+            self.state = "muted"
+            return
+        self.last_adc_time = clock.inputBufferAdcTime
+        self.last_dac_time = clock.outputBufferDacTime
         if frames != HOP:
             self.safety.trip("unexpected_callback_size")
             return
@@ -125,6 +138,12 @@ class LiveSession:
                 except queue.Full:
                     self.safety.trip("input_overload")
                     self.state = "muted"
+
+        # A failure discovered after reading reference/input must mute THIS
+        # submitted block, and the retained reference must reflect that mute.
+        if self.safety.state == "muted":
+            outdata.fill(0)
+            self.timeline.samples[-frames:] = 0
 
     def work(self):
         try:
