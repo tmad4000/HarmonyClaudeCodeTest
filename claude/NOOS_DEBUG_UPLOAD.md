@@ -63,3 +63,5 @@ not authorization or verified personal identity. The backend binds recipient,
 app and the anonymous device. No IP or account identity is added by this client.
 
 Independent follow-up review approved module SHA256 `966798c1b17cb5f1a05d1524b5b85daca6dcc6ee0bba3beb117a694ebd8d6b26`: updated sandboxed contract/count tests passed, including pending202, confirmed scoped counts, old-epoch replay and access-based summaries. This does not approve public activation.
+
+The indicator follow-up SHA256 `17f265fff199d003b66452a2283eb806eabc42968b24a3e26b2895580784c760` is independently approved. Real mocked413/429/507 classification uses a short limit label without inventing a daily reset; the429 contract test verifies Retry-After and recovery. Request/backoff and activation gates are unchanged.
