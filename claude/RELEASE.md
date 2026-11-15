@@ -1,3 +1,13 @@
+# 2026-11-15-canvas-ready-1
+
+Updated 2026-11-15T14:12:24Z.
+
+Fix cold-start pitch visualization when stylesheet colours arrive late: refresh colours on load and while the palette is empty; skip trace drawing until its colour exists. Late CSS no longer leaves the picture blank for the visit.
+
+Validation: a fresh-profile, delayed nonblocking stylesheet fixture reproduces the old repeated CanvasGradient error and verifies nonempty harmony traces recover without page errors in light and dark themes. This controlled fixture forces late CSS application; ordinary parser-blocking stylesheet delivery can hide the race. Audio/DSP, local diagnostics and upload-disabled state are unchanged. Physical iPhone and real-room singing remain unverified.
+
+---
+
 # 2026-11-15-local-polish-1
 
 Updated 2026-11-15T13:58:06Z.
