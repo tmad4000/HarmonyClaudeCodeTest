@@ -1,3 +1,15 @@
+# 2026-11-15-local-polish-1
+
+Updated 2026-11-15T13:58:06Z.
+
+- The corner reads “Recording on” while idle, “Recording” only while a debug recorder is running, and “Recording off” when disabled.
+- Tone.js 14.8.49 is served locally with the same bytes and licences as the previously loaded pinned CDN build.
+- Staff note labels sit above their lines with a clear background in dark and light themes.
+
+Debug sessions remain local with Export visible; automatic upload is disabled pending the reviewed Noos service. Singing on physical phones and real speakers remains unverified.
+
+---
+
 # 2026-11-15-phone-gate-1
 
 Updated 2026-11-15T12:19:00.451Z. Stable v2-1 base; no Saves, boost or later output crossfade.

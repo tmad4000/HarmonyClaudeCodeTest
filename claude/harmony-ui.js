@@ -45,7 +45,7 @@ window.addEventListener('DOMContentLoaded', () => {
  h.drawWaveform=()=>{}; // The live pitch view replaces the old amplitude oscilloscope.
  const cv=$('pitchHistory'),cx=cv.getContext('2d');let width=0,height=0,history=[],centre=64,last=0,lastState='';
  const resize=()=>{const r=cv.getBoundingClientRect(),d=Math.min(devicePixelRatio||1,2);width=r.width;height=r.height;cv.width=width*d;cv.height=height*d;cx.setTransform(d,0,0,d,0,0);};new ResizeObserver(resize).observe(cv);resize();
- let palette={};const colors=()=>{const c=getComputedStyle(app);palette={strong:c.getPropertyValue('--app-strong').trim(),grid:c.getPropertyValue('--app-grid').trim(),muted:c.getPropertyValue('--app-muted').trim(),accent:c.getPropertyValue('--app-accent').trim(),ink:c.getPropertyValue('--app-ink').trim()};};colors();matchMedia('(prefers-color-scheme: light)').addEventListener('change',colors);
+ let palette={};const colors=()=>{const c=getComputedStyle(app);palette={background:c.getPropertyValue('--app-bg').trim(),strong:c.getPropertyValue('--app-strong').trim(),grid:c.getPropertyValue('--app-grid').trim(),muted:c.getPropertyValue('--app-muted').trim(),accent:c.getPropertyValue('--app-accent').trim(),ink:c.getPropertyValue('--app-ink').trim()};};colors();matchMedia('(prefers-color-scheme: light)').addEventListener('change',colors);
  const y=m=>height/2-(m-centre)*height/26;
  function frame(now){requestAnimationFrame(frame);if(document.hidden||now-last<(matchMedia('(prefers-reduced-motion: reduce)').matches?67:33))return;last=now;
   const state=[h.isRunning,h.speakerMode,h.extraProtection,h.currentMode,h.harmonyPosition,h.echoMode,h.cancellerFailed].join(':');
@@ -62,8 +62,9 @@ window.addEventListener('DOMContentLoaded', () => {
   history=history.filter(r=>now-r.t<5500);if(p!==null)centre+=(p-centre)*.025;
   cx.clearRect(0,0,width,height);cx.font='10px system-ui';cx.textBaseline='middle';
   const key=h.effectiveKey(),scale=window.HarmonyTheory.SCALES[key.type]||[0,2,4,5,7,9,11];
-  cx.lineWidth=1;
-  for(let m=Math.floor(centre-13);m<centre+13;m++){if(!scale.includes(((m-key.root)%12+12)%12))continue;const yy=Math.round(y(m))+.5,tonic=((m-key.root)%12+12)%12===0;cx.strokeStyle=tonic?palette.strong:palette.grid;cx.beginPath();cx.moveTo(0,yy);cx.lineTo(width,yy);cx.stroke();if(tonic){cx.fillStyle=palette.muted;cx.fillText(window.HarmonyTheory.midiToName(m),8,yy-7);}}
+  cx.lineWidth=1;const staffLabels=[];
+  for(let m=Math.floor(centre-13);m<centre+13;m++){if(!scale.includes(((m-key.root)%12+12)%12))continue;const yy=Math.round(y(m))+.5,tonic=((m-key.root)%12+12)%12===0;cx.strokeStyle=tonic?palette.strong:palette.grid;cx.beginPath();cx.moveTo(0,yy);cx.lineTo(width,yy);cx.stroke();if(tonic)staffLabels.push({name:window.HarmonyTheory.midiToName(m),yy});}
+  cx.textBaseline='bottom';for(const {name,yy} of staffLabels){const labelY=yy-3;cx.fillStyle=palette.background;cx.fillRect(5,labelY-12,cx.measureText(name).width+6,13);cx.fillStyle=palette.muted;cx.fillText(name,8,labelY);}cx.textBaseline='middle';
   const line=(get,color,w)=>{const gradient=cx.createLinearGradient(0,0,width*.78,0);gradient.addColorStop(0,'transparent');gradient.addColorStop(.3,color);gradient.addColorStop(1,color);cx.strokeStyle=gradient;cx.lineWidth=w;cx.lineJoin=cx.lineCap='round';cx.beginPath();let open=false,prev=null;for(const r of history){const m=get(r);if(m==null){open=false;prev=null;continue;}const x=width*.78-(now-r.t)/5200*width*.78;if(prev!==null&&Math.abs(m-prev)>2)open=false;if(!open)cx.moveTo(x,y(m));else cx.lineTo(x,y(m));open=true;prev=m;}cx.stroke();};
   for(let i=0;i<4;i++)line(r=>r.targets[i],palette.accent,2);line(r=>r.p,palette.ink,3);
   const head=history.at(-1);if(head&&h.isRunning){const dot=(m,color,label)=>{if(m==null)return;cx.fillStyle=color;cx.beginPath();cx.arc(width*.78,y(m),4,0,Math.PI*2);cx.fill();cx.fillText(label,width*.78+10,y(m));};head.targets.forEach(m=>dot(m,palette.accent,window.HarmonyTheory.midiToName(m)));dot(head.p,palette.ink,'You');}
