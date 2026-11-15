@@ -734,12 +734,14 @@ class HarmonySinger {
         el.textContent = `${kind === 'pad' ? 'Pad' : 'Piano'} plays ${what}${this.backing === 'voice+piano' ? ', plus your shifted voice' : ''}${held}`;
     }
 
-    async ensureInstrument(kind) {
+    async ensureInstrument(kind, checkCurrent = () => {}) {
         if (this.instruments[kind]) return this.instruments[kind];
-        let inst;
+        let inst, filt;
+        try {
         if (kind === 'piano') {
             inst = new Tone.Sampler({ urls: PIANO_URLS, baseUrl: PIANO_BASE_URL, release: 1.2, attack: 0.005 });
             await Tone.loaded();
+            checkCurrent();
         } else {
             inst = new Tone.PolySynth(Tone.Synth, {
                 maxPolyphony: 8,
@@ -748,13 +750,18 @@ class HarmonySinger {
             });
             inst.volume.value = -10;
         }
-        const filt = new Tone.Filter({ type: 'lowpass', frequency: kind === 'pad' ? 1800 : 6000, rolloff: -12 });
+        filt = new Tone.Filter({ type: 'lowpass', frequency: kind === 'pad' ? 1800 : 6000, rolloff: -12 });
         inst.connect(filt);
         filt.connect(this.instGain);
         this.instruments[kind] = inst;
         this.instruments[kind + '_filter'] = filt;
         this.logEvent('instrument-ready', { kind });
         return inst;
+        } catch (error) {
+            try { inst?.dispose(); } catch (_) {}
+            try { filt?.dispose(); } catch (_) {}
+            throw error;
+        }
     }
 
     /** Decide what the instrument should hold for the sung note and apply note on/offs. */
@@ -1112,6 +1119,9 @@ class HarmonySinger {
     async start() {
         if (this.starting || this.isRunning) return;
         this.starting = true;
+        const generation = this.startGeneration = (this.startGeneration || 0) + 1;
+        const current = () => this.startGeneration === generation;
+        const checkCurrent = () => { if (!current()) throw Object.assign(new Error('Microphone startup was interrupted; tap Sing again.'), { name: 'AbortError', startupCancelled: true }); };
         this.lastError = null;
         try {
             // Both resume calls are initiated before yielding the Sing gesture.
@@ -1120,6 +1130,7 @@ class HarmonySinger {
             const starting = [Tone.start()];
             if (existingContext?.resume && ['suspended', 'interrupted'].includes(existingContext.state)) starting.push(existingContext.resume());
             await Promise.all(starting);
+            checkCurrent();
             this.audioContext = Tone.getContext().rawContext;
             const ctx = this.audioContext;
             let audioSession = { supported: false };
@@ -1209,7 +1220,12 @@ class HarmonySinger {
                 if(this.reusableStream && this.reusableStream.getAudioTracks()[0]?.readyState==='live'){
                     this.mediaStream=this.reusableStream;this.reusableStream=null;
                     await this.mediaStream.getAudioTracks()[0].applyConstraints(audioConstraints);
-                }else this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                    checkCurrent();
+                }else {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                    if (!current()) { stream.getTracks().forEach(track => track.stop()); checkCurrent(); }
+                    this.mediaStream = stream;
+                }
                 const track = this.mediaStream.getAudioTracks()[0];
                 const settings = track.getSettings();
                 console.log('Actual audio settings:', settings);
@@ -1222,15 +1238,19 @@ class HarmonySinger {
                     this.logEvent('warning', { message: 'Browser kept its own voice processing on although it was asked not to', actual: settings });
                 }
                 this.micSource = ctx.createMediaStreamSource(this.mediaStream);
+                if (!this.micSource || typeof this.micSource.connect !== 'function') throw new Error('The microphone source could not be created on the audio context');
+                this.logEvent('microphone-source', { assigned: true, contextMatches: this.micSource.context === ctx, trackState: track.readyState });
             }
 
             this.outputLabel=await this.readOutputLabel();
+            checkCurrent();
             this.logEvent('output-route',{label:this.outputLabel,source:'Browser default description; physical route not guaranteed'});
             if(this.outputDefaultPending&&/headphone|airpod|bud|earphone/i.test(this.outputLabel)){
                 this.speakerMode=false;this.outputPosition=0;useCanceller=false;this.renderSpeakerMode();
                 const track=this.mediaStream?.getAudioTracks()[0];if(track)await track.applyConstraints({echoCancellation:false,noiseSuppression:false,autoGainControl:false});
             }
             this.outputDefaultPending=false;
+            checkCurrent();
             // ---- simulated room (tests): whatever we play comes back into the "microphone"
             this.roomNodes = [];
             this.roomBus = null;
@@ -1249,15 +1269,24 @@ class HarmonySinger {
             if (useCanceller) {
                 try {
                     const HEC = window.HarmonyEchoCanceller;
-                    if (!ctx.__harmonyAecModule) ctx.__harmonyAecModule = (async()=>{
-                        // Tone14's standardized worklet loader emits an uncaught error onHTTP404
-                        // even when its promise is caught. Fetch first, then load an owned Blob URL.
-                        const response=await fetch(this.params.get('aecUrl')||'echo-canceller.js');
-                        if(!response.ok)throw new Error('Echo module HTTP '+response.status);
-                        const moduleUrl=URL.createObjectURL(new Blob([await response.text()],{type:'text/javascript'}));
-                        try{await ctx.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
-                    })();
+                    if (!ctx.__harmonyAecModule) {
+                        const moduleLoad = (async()=>{
+                            // Tone14's standardized worklet loader emits an uncaught error onHTTP404
+                            // even when its promise is caught. Fetch first, then load an owned Blob URL.
+                            const response=await fetch(this.params.get('aecUrl')||'echo-canceller.js');
+                            if(!response.ok)throw new Error('Echo module HTTP '+response.status);
+                            const moduleUrl=URL.createObjectURL(new Blob([await response.text()],{type:'text/javascript'}));
+                            try{await ctx.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
+                        })();
+                        ctx.__harmonyAecModule = moduleLoad;
+                        // A cancelled attempt still owns its loader rejection.
+                        // Do not leave a rejected cache or clear a replacement.
+                        moduleLoad.catch(() => {
+                            if (ctx.__harmonyAecModule === moduleLoad) ctx.__harmonyAecModule = null;
+                        });
+                    }
                     await ctx.__harmonyAecModule;
+                    checkCurrent();
                     const latency = ((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * ctx.sampleRate;
                     this.aecDelayGuess = Math.max(0, Math.round(latency - 0.012 * ctx.sampleRate));
                     this.aecNode = Tone.getContext().createAudioWorkletNode(HEC.PROCESSOR_NAME, {
@@ -1273,10 +1302,12 @@ class HarmonySinger {
                     this.micSource.connect(this.aecNode, 0, 0);
                     inputNode = this.aecNode;
                 } catch (aecErr) {
+                    checkCurrent();
                     console.warn('Echo canceller unavailable, continuing without it:', aecErr);
                     this.logEvent('warning', { message: 'Reference canceller unavailable; falling back to browser echo cancellation', error: String(aecErr && aecErr.message) });
                     const track=this.mediaStream?.getAudioTracks()[0];
                     if(track)await track.applyConstraints({echoCancellation:true,noiseSuppression:false,autoGainControl:false});
+                    checkCurrent();
                     this.echoMode='browser';
                     document.getElementById('echoModeSelect').value='browser';
                     this.renderSpeakerMode();
@@ -1343,6 +1374,7 @@ class HarmonySinger {
             this.chorus.start();
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
             await this.reverb.ready; // Constructor already generates the impulse response.
+            checkCurrent();
             this.masterGain = new Tone.Gain(1);
             this.limiter = new Tone.Limiter(-3);
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
@@ -1399,21 +1431,25 @@ class HarmonySinger {
             if (roomSim) this.buildRoom(ctx);
 
             try {
-                await this.createPitchShifters();
+                await this.createPitchShifters(checkCurrent);
+                checkCurrent();
             } catch (engineErr) {
+                checkCurrent();
                 if (this.engine === 'stretch') {
                     console.warn('Signalsmith engine failed, falling back to granular:', engineErr);
                     this.logEvent('engine-fallback', { error: String(engineErr && engineErr.message) });
                     this.engine = 'granular';
                     const sel = document.getElementById('engineSelect');
                     if (sel) sel.value = 'granular';
-                    await this.createPitchShifters();
+                    await this.createPitchShifters(checkCurrent);
+                    checkCurrent();
                 } else {
                     throw engineErr;
                 }
             }
 
-            if (this.instrumentKind()) await this.ensureInstrument(this.instrumentKind());
+            if (this.instrumentKind()) await this.ensureInstrument(this.instrumentKind(), checkCurrent);
+            checkCurrent();
             this.speakerTrim = 1;
             this.aecFrozen = false;
             this.checkResult = null;
@@ -1432,12 +1468,13 @@ class HarmonySinger {
             this.updateUI();
             this.startPitchDetection();
             this.drawWaveform();
-            if (this.calibrating) {await this.runSpeakerCheck();if(this.checkResult?.ok&&this.checkResult.confident)this.speakerChecks.set(checkKey,{...this.checkResult});}
+            if (this.calibrating) {await this.runSpeakerCheck();checkCurrent();if(this.checkResult?.ok&&this.checkResult.confident)this.speakerChecks.set(checkKey,{...this.checkResult});}
             const hint=document.getElementById('protectionHint');
             if(hint)hint.hidden=!(this.checkResult?.couplingDb>-6&&!this.extraProtection);
             if (this.isRunning && this.params.get('record') === '1') this.startRecording();
             if (this.isRunning && this.debugNoticeAccepted) window.harmonyDebug?.start(this);
         } catch (err) {
+            if (!current()) { this.logEvent('startup-cancelled', { name: err.name, message: err.message }); return; }
             console.error('Error starting:', err);
             this.logEvent('error', { message: String(err && err.message), name: err && err.name });
             if(window.harmonyDebug)window.harmonyDebug.skip=false;
@@ -1630,7 +1667,7 @@ class HarmonySinger {
         return FOUR_VOICE_MODES.includes(this.currentMode) ? SATB : ['lower', 'upper'];
     }
 
-    async createPitchShifters() {
+    async createPitchShifters(checkCurrent = () => {}) {
         this.disposeVoices();
         const voices = this.voiceNames();
         for (const voice of voices) {
@@ -1638,6 +1675,7 @@ class HarmonySinger {
             const tap = this.audioContext.createAnalyser();
             tap.fftSize = 4096;
             let shifter;
+            try {
             if (this.engine === 'stretch') {
                 if (typeof SignalsmithStretch !== 'function') {
                     throw new Error('Signalsmith Stretch engine not loaded (vendor/SignalsmithStretch.js)');
@@ -1646,6 +1684,7 @@ class HarmonySinger {
                 shifter = await SignalsmithStretch(Tone.getContext(), {
                     numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1]
                 });
+                checkCurrent();
                 const blockMs = parseFloat(this.params.get('blockMs') || '60');
                 if (shifter.configure) shifter.configure({ blockMs, intervalMs: blockMs / 4 });
                 shifter.schedule({ semitones: 0, formantCompensation: true, formantBaseHz: 0 });
@@ -1664,6 +1703,14 @@ class HarmonySinger {
             this.gains[voice] = gain;
             this.voiceAnalysers[voice] = tap;
             this.voiceShifts[voice] = 0;
+            } catch (error) {
+                try { shifter?.stop?.(); } catch (_) {}
+                try { shifter?.disconnect?.(); } catch (_) {}
+                try { shifter?.dispose?.(); } catch (_) {}
+                try { gain.dispose(); } catch (_) {}
+                try { tap.disconnect(); } catch (_) {}
+                throw error;
+            }
         }
         this.stableMidi = null;
         this.updateGains();
@@ -1776,6 +1823,7 @@ class HarmonySinger {
     }
 
     stop(preserveInput = false) {
+        this.startGeneration = (this.startGeneration || 0) + 1;
         clearTimeout(this.restartTimer);
         window.harmonyDebug?.stop();
         if(!preserveInput && !this.internalRestart) window.harmonyDebug && (window.harmonyDebug.skip=false);
