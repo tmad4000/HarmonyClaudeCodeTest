@@ -1,3 +1,11 @@
+## 2026-11-15-continuous-control-1
+
+- Audio check now has a large explicit Continuous ON/OFF button and visible actual-state confirmation. The main Audio check label also shows ON while active, and clears after Stop even when its panel is closed. Changes and session-start state are logged.
+- AudioSession type/state and destination mute/volume are captured in session metadata and post-start readings, so the pre-start event filter cannot omit them. Routing is not forced.
+- The current harmony voice, semitone interval and target note/frequency appear beside the meters.
+
+No normal gain or echo-guard behavior changes in this release. The unknown-coupling gate fix remains a separate engine change under quiet-voice and closed-loop testing. Physical iPhone routing is not certified.
+
 ## 2026-11-15-phone-audio-check-1
 
 - Prominent phone warning, shown on every visit; dismissal lasts only for that visit.
