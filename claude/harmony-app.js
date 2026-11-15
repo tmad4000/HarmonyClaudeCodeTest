@@ -1176,7 +1176,14 @@ class HarmonySinger {
             if (useCanceller) {
                 try {
                     const HEC = window.HarmonyEchoCanceller;
-                    if (!ctx.__harmonyAecModule) ctx.__harmonyAecModule = ctx.audioWorklet.addModule(this.params.get('aecUrl') || 'echo-canceller.js');
+                    if (!ctx.__harmonyAecModule) ctx.__harmonyAecModule = (async()=>{
+                        // Tone14's standardized worklet loader emits an uncaught error onHTTP404
+                        // even when its promise is caught. Fetch first, then load an owned Blob URL.
+                        const response=await fetch(this.params.get('aecUrl')||'echo-canceller.js');
+                        if(!response.ok)throw new Error('Echo module HTTP '+response.status);
+                        const moduleUrl=URL.createObjectURL(new Blob([await response.text()],{type:'text/javascript'}));
+                        try{await ctx.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
+                    })();
                     await ctx.__harmonyAecModule;
                     const latency = ((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * ctx.sampleRate;
                     this.aecDelayGuess = Math.max(0, Math.round(latency - 0.012 * ctx.sampleRate));
@@ -1256,7 +1263,7 @@ class HarmonySinger {
             this.chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: this.chorusAmount });
             this.chorus.start();
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
-            await this.reverb.generate();
+            await this.reverb.ready; // Constructor already generates the impulse response.
             this.masterGain = new Tone.Gain(1);
             this.limiter = new Tone.Limiter(-3);
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
