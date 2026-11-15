@@ -1,0 +1,9 @@
+{
+  "appId": "com.ideaflow.harmony",
+  "appName": "Harmony",
+  "webDir": "www",
+  "ios": {
+    "loggingBehavior": "none",
+    "webContentsDebuggingEnabled": false
+  }
+}
