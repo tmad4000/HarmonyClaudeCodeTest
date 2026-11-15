@@ -72,8 +72,8 @@ def verify(artifact, platform, source, version, build, output, installer=None, p
         expected_web=source_root/'mobile/www'
         manifest=json.loads((expected_web/'native-bundle.json').read_text())
         packaged_web=resources/'public'
-        for name,digest in manifest.items():
-            require((packaged_web/name).is_file() and hashlib.sha256((packaged_web/name).read_bytes()).hexdigest()==digest,'Packaged web mismatch: '+name)
+        for name,web_digest in manifest.items():
+            require((packaged_web/name).is_file() and hashlib.sha256((packaged_web/name).read_bytes()).hexdigest()==web_digest,'Packaged web mismatch: '+name)
         require((packaged_web/'native-bundle.json').read_bytes()==(expected_web/'native-bundle.json').read_bytes(),'Wrong packaged web manifest')
         extras={str(p.relative_to(packaged_web)) for p in packaged_web.rglob('*') if p.is_file()}-set(manifest)-{'native-bundle.json','cordova.js','cordova_plugins.js'}
         require(not extras,'Unexpected packaged web assets: '+str(extras))
