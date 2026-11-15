@@ -1,0 +1,8 @@
+{
+  "modified_tensors": 90,
+  "original_bytes": 56616643,
+  "packed_bytes": 28396756,
+  "gzip_bytes": 26461509,
+  "sha256": "c8fa9907a7aa94321d4675fdc157253946b1f1eff91b79e155040a0db8849f0a",
+  "method": "Conv weight storage FP16; Cast restores FP32 before arithmetic; no fine-tuning"
+}

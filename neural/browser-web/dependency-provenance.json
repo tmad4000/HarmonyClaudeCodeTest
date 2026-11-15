@@ -1,0 +1,14 @@
+{
+  "onnxruntime-web": {
+    "version": "1.22.0",
+    "published_at": "2025-05-09T23:04:12.785Z",
+    "registry": "https://registry.npmjs.org/onnxruntime-web",
+    "integrity": "sha512-Ud/+EBo6mhuaQWt/OjaOk0iNWjXqJoeeMFr6xQEERZdIZH2OWpGzuujz7lfuOBjUa6TEE/sc4nb7Da5dNL34fg=="
+  },
+  "fft.js": {
+    "version": "4.0.4",
+    "published_at": "2021-01-11T21:00:36.482Z",
+    "registry": "https://registry.npmjs.org/fft.js",
+    "integrity": "sha512-f9c00hphOgeQTlDyavwTtu6RiK8AIFjD6+jvXkNkpeQ7rirK3uFWVpalkoS4LAwbdX7mfZ8aoBfFVQX1Re/8aw=="
+  }
+}

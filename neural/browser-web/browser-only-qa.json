@@ -1,0 +1,21 @@
+{
+  "dsp": {
+    "maxMel": 0.000209808349609375,
+    "maxCents": 0,
+    "frames": 43,
+    "voiced": 43
+  },
+  "load_ms": 794,
+  "status": "Ready in 59.8 s · B♭ major. Press play to listen.",
+  "output": {
+    "frames": 441000,
+    "bytes": 882044,
+    "rms": 0.012840678366609081,
+    "peak": 0.110321044921875
+  },
+  "posts": [],
+  "errors": [],
+  "overflow": false,
+  "sandbox": true,
+  "limit": "Linux sandboxed Chrome synthetic mic only. No Mac/iOS/human listening claim. WASM single-thread; no COOP/COEP required."
+}
