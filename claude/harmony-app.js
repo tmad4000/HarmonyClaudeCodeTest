@@ -1717,6 +1717,32 @@ class HarmonySinger {
         return Object.keys(this.gains).some(v => this.gains[v].gain.value > 0 && Number.isFinite(this.voiceShifts[v]) && this.voiceShifts[v] % 12 === 0);
     }
 
+    usesIndependentNearEvidence() {
+        return this.currentMode === 'thirds' && this.backing === 'voice';
+    }
+
+    /** Pitches currently sent by the harmony graph, before reading a new input pitch. */
+    playedPitchesHz() {
+        // Chorus/reverb and released instruments keep sounding AFTER the gate.
+        // Preserve their last targets until the actual speaker reference is quiet.
+        const referenceActive = (this.aecStats?.refPow || 0) >= 1e-8;
+        if (!this.gateOpen) {
+            if (!referenceActive) this.playedPitchTail = [];
+            return this.playedPitchTail || [];
+        }
+        const pitches = [];
+        if (this.backing === 'voice' || this.backing === 'voice+piano') {
+            for (const voice of Object.keys(this.gains)) {
+                if (!(this.gains[voice].gain.value > 0)) continue;
+                const shift = this.voiceShifts[voice];
+                if (Number.isFinite(this.smoothedPitch) && Number.isFinite(shift)) pitches.push(this.smoothedPitch * Math.pow(2, shift / 12));
+            }
+        }
+        if (this.instGain?.gain.value > 0) for (const midi of this.instNotes || []) if (Number.isFinite(midi)) pitches.push(midiToFreq(midi));
+        if (pitches.length || !referenceActive) this.playedPitchTail = pitches;
+        return this.playedPitchTail || [];
+    }
+
     setVoiceShift(voice, semitones) {
         if (this.voiceShifts[voice] === semitones) return;
         this.voiceShifts[voice] = semitones;
@@ -1805,6 +1831,7 @@ class HarmonySinger {
         this.mic = null; this.gateGain = null; this.trimGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
         this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
         this.smoothedPitch = null;
+        this.playedPitchTail = [];
         this.stableMidi = null;
         this.guardCandidates = [];
         this.renderCheckResult();
@@ -1836,7 +1863,11 @@ class HarmonySinger {
                 this.analyseSpectrum(voiced ? pitch : null, now);
             }
 
-            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active)});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
+            // The independent near-end policy is scoped to the validated voice
+            // thirds configuration. Coherent and instrumental modes retain the
+            // original classifier/controller contract, including initial shifts.
+            const independentPolicy = this.usesIndependentNearEvidence();
+            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
             if(this.isIOS&&this.mic){const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);const target=Math.min(4,Math.max(1,.02/Math.max(rawLevel,.005)));this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup?.2:.025);this.mic.gain.rampTo(this.inputMakeup,.12);}
 
             // Speaker mode with the canceller: ask the loop controller whether what we hear is the
@@ -1844,8 +1875,9 @@ class HarmonySinger {
             // echo must not steer the pitch tracker, hold instrument notes or keep the gate open.
             let loop = null;
             if (this.usingCanceller() && this.aecNode && this.loopControl) {
-                loop = this.loopControl.update({ now, voiced: voiceLike, stats: this.aecStats });
-                if ((!loop.nearOk&&!decision.quietReference&&!decision.nearDominant) || this.calibrating) voiced = false;
+                loop = this.loopControl.update({ now, voiced: voiceLike, stats: this.aecStats,
+                    ...(independentPolicy?{independentNear:decision.independentNear,nearSeeded:decision.nearSeeded,playedAmbiguous:decision.matchesPlayed}:{}) });
+                if ((independentPolicy?!loop.nearOk:(!loop.nearOk&&!decision.quietReference&&!decision.nearDominant)) || this.calibrating) voiced = false;
                 if (Math.abs(loop.trim - this.speakerTrim) > 0.01 || (loop.trim === 1 && this.speakerTrim !== 1)) {
                     this.speakerTrim = loop.trim;
                     if (this.trimGain) this.trimGain.gain.rampTo(loop.trim, 0.04);
@@ -1941,7 +1973,7 @@ class HarmonySinger {
                         adapted: this.aecStats.adapted, leak: +this.aecStats.leak.toFixed(3), micDb: Math.round(this.aecStats.micDb), outDb: Math.round(this.aecStats.outDb),
                         echoDb: Math.round(this.aecStats.echoDb), refDb: Math.round(this.aecStats.refDb), relearns: this.aecStats.relearns, resets: this.aecStats.resets,
                         renderGaps: this.aecStats.renderGaps, missingInputBlocks: this.aecStats.missingInputBlocks, hardwareUnderruns: null, delaySamples:this.aecStats.delay, tailMs:110, processP99Ms:null, quantum: this.aecStats.quantum, sampleRate: this.aecStats.sampleRate,
-                        trim: +this.speakerTrim.toFixed(2), nearOk: loop.nearOk, coupling: +(10 * Math.log10(this.loopControl.coupling)).toFixed(1) } } : {})
+                        trim: +this.speakerTrim.toFixed(2), nearOk: loop.nearOk, powerNearOk:loop.powerNearOk,residualConfidence:loop.residualConfidence,couplingSource:loop.couplingSource,loopGainKnown:loop.loopGainKnown,emergencyActive:loop.emergencyActive,hotEmergency:loop.hotEmergency,nearReason:decision.nearReason,seedAgeMs:decision.seedAgeMs,coupling: +(10 * Math.log10(this.loopControl.coupling)).toFixed(1) } } : {})
                 });
                 if (this.speakerMode) this.updateGuardStatus();
             }
