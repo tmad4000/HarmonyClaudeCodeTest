@@ -71,3 +71,7 @@ the model shards. Preserve them and the visible attribution link. Original
 release https://github.com/openvpi/vocoders/releases/tag/pc-nsf-hifigan-44.1k-hop512-128bin-2025.02
 Original archiveSHA256 ba7d43142d41f6900c8264b5662ca7125a50feb8760bb8b9615c61a8f5e6902e.
 No commercial licence claim; noncommercial research/friends evaluation.
+
+QA scripts are host-scoped and use NEURAL_QA_LAB (default the absolute browser-lab
+path above) for preview-owner.json and evidence. Start that task-owned lab server
+when rerunning; it was stopped after verification. They do not start a publisher.
