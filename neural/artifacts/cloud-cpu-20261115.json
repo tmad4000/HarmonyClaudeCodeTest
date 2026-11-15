@@ -1,0 +1,82 @@
+{
+  "host": "jacob-dev-1.us-central1-a.c.jacob-dev-20261112.internal",
+  "engine": "CPUExecutionProvider, 2 threads",
+  "rows": [
+    {
+      "fixture": 1,
+      "profile": "original",
+      "seconds": 2.0,
+      "rtf": 3.070555884492933,
+      "compute_p95_ms": 489.7836315649328,
+      "worker_ready_p95_ms": 4095.8563749668074,
+      "input_buffer_ms": 116.09977324263039
+    },
+    {
+      "fixture": 1,
+      "profile": "responsive",
+      "seconds": 2.0,
+      "rtf": 4.6902782105025835,
+      "compute_p95_ms": 458.82272328890406,
+      "worker_ready_p95_ms": 6942.955470957319,
+      "input_buffer_ms": 69.65986394557822
+    },
+    {
+      "fixture": 1,
+      "profile": "offline-two-voices",
+      "seconds": 10.0,
+      "render_seconds": 49.025166301988065,
+      "key": 5
+    },
+    {
+      "fixture": 10,
+      "profile": "original",
+      "seconds": 2.0,
+      "rtf": 4.152148811495863,
+      "compute_p95_ms": 497.1333090201369,
+      "worker_ready_p95_ms": 6262.525010372758,
+      "input_buffer_ms": 116.09977324263039
+    },
+    {
+      "fixture": 10,
+      "profile": "responsive",
+      "seconds": 2.0,
+      "rtf": 5.183730395001476,
+      "compute_p95_ms": 365.0448314961978,
+      "worker_ready_p95_ms": 8180.155777307453,
+      "input_buffer_ms": 69.65986394557822
+    },
+    {
+      "fixture": 10,
+      "profile": "offline-two-voices",
+      "seconds": 10.0,
+      "render_seconds": 81.14740382999298,
+      "key": 11
+    },
+    {
+      "fixture": 20,
+      "profile": "original",
+      "seconds": 2.0,
+      "rtf": 1.4936018180014798,
+      "compute_p95_ms": 184.67581051227168,
+      "worker_ready_p95_ms": 1107.9064163805574,
+      "input_buffer_ms": 116.09977324263039
+    },
+    {
+      "fixture": 20,
+      "profile": "responsive",
+      "seconds": 2.0,
+      "rtf": 1.780608489003498,
+      "compute_p95_ms": 98.13285716081737,
+      "worker_ready_p95_ms": 1566.6557431677277,
+      "input_buffer_ms": 69.65986394557822
+    },
+    {
+      "fixture": 20,
+      "profile": "offline-two-voices",
+      "seconds": 10.0,
+      "render_seconds": 19.174652228015475,
+      "key": 7
+    }
+  ],
+  "note": "Measured CPU timings, excludes network/hardware. Shared-host load may vary."
+}

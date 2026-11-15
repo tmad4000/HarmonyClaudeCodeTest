@@ -1,0 +1,25 @@
+[Unit]
+Description=Neural Harmony offline takes (owner f7e222be, root d3caa262)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dev/code/neural-harmony-20261115/source/neural
+Environment=PORT=9918
+Environment=TAILNET_BIND=100.116.136.69
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=TAKE_ORIGIN=https://jacob-dev-1.tailb2a35c.ts.net:9918
+ExecStart=/home/dev/code/neural-harmony-20261115/venv/bin/python /home/dev/code/neural-harmony-20261115/source/neural/take_service.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+MemoryMax=1800M
+CPUQuota=200%
+TasksMax=48
+UMask=0077
+
+[Install]
+WantedBy=default.target

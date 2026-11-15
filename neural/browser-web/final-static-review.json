@@ -1,0 +1,9 @@
+{
+  "full_licence_link": "/neural-browser/MODEL-LICENSE.txt",
+  "full_licence_http_status": 200,
+  "licence_adjacent_to_weights": true,
+  "shard_hash_matches_manifest": true,
+  "pre_load_neural_requests": [],
+  "phone_overflow": false,
+  "sandbox": true
+}

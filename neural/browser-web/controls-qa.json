@@ -1,0 +1,17 @@
+{
+  "result": {
+    "invalid": [
+      true,
+      true,
+      true
+    ],
+    "frames": 22050,
+    "rms": 0.05612230345180926,
+    "peak": 0.260772705078125,
+    "status": "Ready in 2.8 s · A major. Press play to listen."
+  },
+  "cancelled": "Rendering cancelled. Reload the engine to try again.",
+  "integrity_error": "Model checksum mismatch. Reload the page and retry.",
+  "errors": [],
+  "sandbox": true
+}

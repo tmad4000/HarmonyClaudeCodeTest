@@ -1,0 +1,24 @@
+{
+  "model": "OpenVPI PC-NSF-HiFiGAN 2025.02",
+  "attribution": "OpenVPI Team / DiffSinger Community Vocoder",
+  "license": "CC BY-NC-SA-4.0",
+  "license_url": "https://creativecommons.org/licenses/by-nc-sa/4.0/",
+  "use": "Noncommercial; modified weights remain under the same ShareAlike licence",
+  "notice": "MODEL-NOTICE.txt",
+  "modification": "90 large weight tensors stored as float16, restored to float32 with Cast before arithmetic; no fine-tuning",
+  "model_sha256": "c8fa9907a7aa94321d4675fdc157253946b1f1eff91b79e155040a0db8849f0a",
+  "model_bytes": 28396756,
+  "files": [
+    {
+      "name": "model-1.bin",
+      "bytes": 14198378,
+      "sha256": "88158a0831cf4f3e2df267baa5f7d62252aea787c6ffd1ae0f7209fd7f5a2595"
+    },
+    {
+      "name": "model-2.bin",
+      "bytes": 14198378,
+      "sha256": "45870ceb1e51bc47cb994abd89de2cfe33455e8550ae23622852b14684f68ad6"
+    }
+  ],
+  "license_text": "MODEL-LICENSE.txt"
+}
