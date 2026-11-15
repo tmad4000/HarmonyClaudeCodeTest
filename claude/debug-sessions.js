@@ -2,14 +2,14 @@
 (() => {
     class DebugSessions {
         constructor(panel) {
-            this.finalizing=new Set(); this.generation = 0; this.starting = false; this.panel = panel; this.enabled = true; try { this.enabled = localStorage.getItem('harmony-debug-v1') !== 'off'; } catch (_) {}
+            this.finalizing=new Set(); this.generation = 0; this.starting = false; this.panel = panel; this.preferenceKey='harmony-debug-v2';this.preferenceVersion=2; this.enabled = true; try { this.enabled = localStorage.getItem(this.preferenceKey) !== 'off'; } catch (_) {}
             if(new URLSearchParams(location.search).get('debug')==='0') this.enabled=false;
             this.store=new LocalSessionStore('harmony-debug-v1');
             this.db=this.store.db;
             this.db.catch(() => this.status('Storage unavailable — no debug audio is saved'));
             this.panel.querySelector('input').checked = this.enabled;
             this.panel.querySelector('input').onchange = e => {
-                this.enabled = e.target.checked; try { localStorage.setItem('harmony-debug-v1', this.enabled ? 'on' : 'off'); } catch (_) {}
+                this.enabled = e.target.checked; if(!this.suppressPreferenceWrite)try { localStorage.setItem(this.preferenceKey, this.enabled ? 'on' : 'off'); } catch (_) {}
                 if (!this.enabled) this.stop();
                 this.status(this.enabled ? 'Debug recording ON · ready' : 'Debug recording OFF');
             };

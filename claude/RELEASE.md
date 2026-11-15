@@ -1,3 +1,13 @@
+## 2026-11-15-phone-audio-check-1
+
+- Prominent phone warning, shown on every visit; dismissal lasts only for that visit.
+- Debug recording starts on under a new preference version, including browsers that opted out of the earlier local-debug version. Turn Recording off again to keep it off under this version. The recording notice appears before any upload. Old queued uploads are discarded; pending removals stay protected.
+- Audio check on the main screen exposes raw-microphone and final-output levels, context/gate status and a temporary continuous harmony check that bypasses voice gating and ducking. Echo removal and feedback safeguards remain active. Raw silence stays silence; it does not inject a demo voice.
+- Sending failures show a plain-language reason and log a sanitized status for diagnosis. Timeout is distinguished from pressing Recording off.
+- Remove confirmation now repeats that access ends while backup copies may last longer.
+
+Physical iPhone output/routing and singing on real speakers remain unverified. This release supplies diagnostics; it does not claim the continuing phone gap is fixed.
+
 ## 2026-11-15-notice-wrap-1
 
 The beta recording notice keeps its separator with Turn off and Privacy on narrow phones. The approved notice wording and recording behavior are unchanged.
