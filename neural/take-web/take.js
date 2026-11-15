@@ -35,4 +35,4 @@ $('record').onclick=async()=>{
 };
 $('file').onchange=async()=>{if(!$('file').files[0])return;busy(true);try{await upload($('file').files[0]);}catch(e){$('status').textContent=e.message;}finally{busy(false);$('file').value='';}};
 
-if(!navigator.mediaDevices?.getUserMedia){$('record').disabled=true;$('status').textContent='This connection supports WAV upload only. Microphone recording needs the private HTTPS studio.';}
+if(isSecureContext&&navigator.mediaDevices?.getUserMedia){$('record').hidden=false;document.title='Neural Harmony · Record a take';$('status').textContent='Ready. Record a melody or choose a WAV.';}else{$('record').hidden=true;$('status').textContent='Choose a WAV take to render on the private host.';}
