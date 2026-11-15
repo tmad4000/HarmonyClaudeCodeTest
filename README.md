@@ -21,6 +21,8 @@ A real-time vocal harmony generator that acts as your personal AI backup singer 
 > for the note you are singing (I/IV/V preferred, sticky), voiced below your melody, sustained while
 > you sing and released when you stop. An instrument through the speakers barely feeds back.
 
+The **Send feedback** button loads the World Issue Tracker script only when tapped; no World Issue Tracker request is made on page load.
+
 ## Features
 
 - **Real-time pitch detection** using autocorrelation algorithm
