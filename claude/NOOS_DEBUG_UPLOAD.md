@@ -45,3 +45,21 @@ review, including truthful provider recovery retention. Then set the endpoint
 and enable flag in a distinct reviewed release. Preserve the stable rollback and
 the isolated Neural page. No port 8392 proxy, Funnel or separate public ingest
 hosting is part of this implementation.
+
+## Confirmed removals and policy provenance
+
+The additive deletion receipt may include `sessionCount` and `deletedCount`.
+A pending202 is not a completed removal; keep its task and original epoch.
+Only confirmed cleanup can produce “Removed N recordings. They can no longer
+be opened.” The count describes scoped session tombstones, including retries;
+it is not proof that historical storage generations were physically purged.
+The current storage assessment has no verified recovery-copy maximum. Public
+activation therefore also needs root/Jacob’s explicit disclosed-beta decision.
+No bucket policy, credentials or provider configuration are changed here.
+
+Metadata includes appVersion, the existing version/build, a random browser install
+ID, purpose=debug and a recording-policy version. These fields are provenance,
+not authorization or verified personal identity. The backend binds recipient,
+app and the anonymous device. No IP or account identity is added by this client.
+
+Independent follow-up review approved module SHA256 `966798c1b17cb5f1a05d1524b5b85daca6dcc6ee0bba3beb117a694ebd8d6b26`: updated sandboxed contract/count tests passed, including pending202, confirmed scoped counts, old-epoch replay and access-based summaries. This does not approve public activation.
