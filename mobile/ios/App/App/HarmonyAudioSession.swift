@@ -3,10 +3,34 @@ import Capacitor
 import UIKit
 import WebKit
 
+// Preserve Capacitor's UI delegate for every other selector; observe only capture.
+private final class HarmonyCaptureDelegate: NSObject, WKUIDelegate {
+    let original: WKUIDelegate
+    static var decision: JSObject = ["decision": "not-requested"]
+    init(_ original: WKUIDelegate) { self.original = original; super.init() }
+    override func responds(to selector: Selector!) -> Bool { super.responds(to: selector) || original.responds(to: selector) }
+    override func forwardingTarget(for selector: Selector!) -> Any? { original }
+    @available(iOS 15.0, *)
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let allowed = origin.protocol == "capacitor" && origin.host == "localhost" && frame.isMainFrame && type == .microphone
+        Self.decision = ["decision": allowed ? "grant" : "deny", "protocol": origin.protocol,
+                         "host": origin.host, "mainFrame": frame.isMainFrame, "type": Int(type.rawValue)]
+        decisionHandler(allowed ? .grant : .deny)
+    }
+}
+
 @objc(HarmonyViewController)
 class HarmonyViewController: CAPBridgeViewController {
+    private var captureDelegate: HarmonyCaptureDelegate?
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(HarmonyAudioSession())
+        if let delegate = webView?.uiDelegate {
+            let capture = HarmonyCaptureDelegate(delegate)
+            captureDelegate = capture
+            webView?.uiDelegate = capture
+        }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--harmony-smoke"), let content = webView?.configuration.userContentController {
             content.add(self, name: "harmonySmoke")
@@ -84,6 +108,11 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
     private func route() -> JSObject {
         let s = AVAudioSession.sharedInstance()
         let outputs = s.currentRoute.outputs
+        let applicationPermission: String
+        if #available(iOS 17.0, *) {
+            let permission = AVAudioApplication.shared.recordPermission
+            applicationPermission = permission == .granted ? "granted" : permission == .denied ? "denied" : "undetermined"
+        } else { applicationPermission = "unavailable-before-iOS17" }
         let type: String
         if outputs.contains(where: { $0.portType == .builtInSpeaker || $0.portType == .builtInReceiver }) { type = "speaker" }
         else if outputs.contains(where: { [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains($0.portType) }) { type = "bluetooth" }
@@ -94,7 +123,11 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
                 "sampleRate": s.sampleRate, "bufferDuration": s.ioBufferDuration,
                 "inputLatency": s.inputLatency, "outputLatency": s.outputLatency,
                 "category": s.category.rawValue, "mode": s.mode.rawValue,
-                "categoryOptions": Int(s.categoryOptions.rawValue), "active": active]
+                "categoryOptions": Int(s.categoryOptions.rawValue), "active": active,
+                "isInputAvailable": s.isInputAvailable, "applicationRecordPermission": applicationPermission,
+                "recordPermission": s.recordPermission == .granted ? "granted" : s.recordPermission == .denied ? "denied" : "undetermined",
+                "captureAuthorization": AVCaptureDevice.authorizationStatus(for: .audio).rawValue,
+                "webViewCapture": HarmonyCaptureDelegate.decision]
     }
     private func configureCall(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
@@ -102,7 +135,23 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
             catch { self.deactivate(); call.reject("Audio session could not start: \(error.localizedDescription)") }
         }
     }
-    @objc func prepare(_ call: CAPPluginCall) { configureCall(call) }
+    @objc func prepare(_ call: CAPPluginCall) {
+        // Obtain OS permission before activating an input session. WebKit capture
+        // still checks its own permission via the scoped delegate above.
+        DispatchQueue.main.async {
+            let session = AVAudioSession.sharedInstance()
+            if session.recordPermission == .denied {
+                call.reject("Microphone permission denied: enable in Settings → Harmony", "MIC_PERMISSION_DENIED")
+            } else if session.recordPermission == .undetermined {
+                session.requestRecordPermission { granted in
+                    DispatchQueue.main.async {
+                        if granted { self.configureCall(call) }
+                        else { call.reject("Microphone permission denied: enable in Settings → Harmony", "MIC_PERMISSION_DENIED") }
+                    }
+                }
+            } else { self.configureCall(call) }
+        }
+    }
     @objc func activate(_ call: CAPPluginCall) { configureCall(call) }
     @objc func release(_ call: CAPPluginCall) { DispatchQueue.main.async { self.deactivate(); call.resolve() } }
     @objc func getRoute(_ call: CAPPluginCall) { DispatchQueue.main.async { call.resolve(self.route()) } }
