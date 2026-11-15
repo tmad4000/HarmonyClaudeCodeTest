@@ -56,12 +56,14 @@ window.addEventListener('DOMContentLoaded', () => {
    const audioReady=Promise.resolve(window.Tone?.start()).then(()=>null,error=>error);
    const data=await p.prepare();attemptContext.nativeAfterPrepare=data;attemptContext.contextAfterPrepare=contextState();
    if(own!==generation){await p.release();return;}
-   const audioError=await audioReady;if(audioError)throw audioError;
+   const audioError=await audioReady;
+   if(own!==generation){await p.release();return;}
+   if(audioError)throw audioError;
    applyRoute(data);await originalStart(...args);
    // The engine reports failures in lastError rather than rejecting its promise.
    if(h.lastError){await reportFailure(h.lastError);await p.release();return;}
-   if(own!==generation){originalStop();await p.release();return;}
-   if(h.isRunning)route(await p.activate());else {await reportFailure(new Error('Microphone startup stopped before capture became active'));await p.release();}
+   if(own!==generation){originalStop();if(attemptContext?.interruption)await reportFailure(Object.assign(new Error('Audio was interrupted while the microphone was starting; tap Sing again.'),{name:'AbortError'}));await p.release();return;}
+   if(h.isRunning){const activeRoute=await p.activate();if(own!==generation){originalStop();await p.release();return;}route(activeRoute);}else {await reportFailure(new Error('Microphone startup stopped before capture became active'));await p.release();}
   } catch(error){
    originalStop();h.lastError=error;
    await reportFailure(error).catch(e=>h.logEvent('diagnostic-error',{message:String(e.message||e)}));
@@ -72,6 +74,6 @@ window.addEventListener('DOMContentLoaded', () => {
  h.stop=function(...args){if(!args[0])generation++;const result=originalStop(...args);if(!args[0])p.release().catch(()=>{});return result;};
  p.addListener('routeChanged',data=>{if(starting){applyRoute(data);h.logEvent('native-startup-route',data);return;}h.stop();applyRoute(data);h.logEvent('native-stopped',{reason:'route-change'});});
  p.addListener('sessionChanged',route);
- p.addListener('interrupted',data=>{h.stop();h.logEvent('native-stopped',data);});
+ p.addListener('interrupted',data=>{if(starting&&attemptContext)attemptContext.interruption=data;h.stop();h.logEvent('native-stopped',data);});
  p.getRoute().then(route).catch(()=>{});
 });

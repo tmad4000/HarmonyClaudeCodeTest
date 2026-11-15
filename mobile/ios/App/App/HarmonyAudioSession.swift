@@ -34,7 +34,7 @@ class HarmonyViewController: CAPBridgeViewController {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--harmony-smoke"), let content = webView?.configuration.userContentController {
             content.add(self, name: "harmonySmoke")
-            let script = Self.smokeScript.replacingOccurrences(of: "const failureMode=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-mic-failure") ? "const failureMode=true;" : "const failureMode=false;")
+            let script = Self.smokeScript.replacingOccurrences(of: "const failureMode=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-mic-failure") ? "const failureMode=true;" : "const failureMode=false;").replacingOccurrences(of: "const realMic=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-real-mic") ? "const realMic=true;" : "const realMic=false;")
             content.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         #endif
@@ -82,7 +82,7 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in self?.interrupt("media-services-reset") })
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
-    private func configure() throws {
+    private func configure(activate: Bool) throws {
         let session = AVAudioSession.sharedInstance()
         // A2DP OUTPUT only; no allowBluetooth/HFP microphone and no mixWithOthers.
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothA2DP])
@@ -91,9 +91,13 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
         if let mic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
             try session.setPreferredInput(mic)
         }
-        try session.setActive(true)
-        active = true
-        UIApplication.shared.isIdleTimerDisabled = true
+        // WebKit acquires capture first; activating here during prepare can
+        // interrupt that handoff. Reapply/activate only after the graph is ready.
+        if activate {
+            try session.setActive(true)
+            active = true
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
     }
     private func deactivate() {
         active = false
@@ -130,9 +134,9 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
                 "captureAuthorization": AVCaptureDevice.authorizationStatus(for: .audio).rawValue,
                 "webViewCapture": HarmonyCaptureDelegate.decision]
     }
-    private func configureCall(_ call: CAPPluginCall) {
+    private func configureCall(_ call: CAPPluginCall, activate: Bool = true) {
         DispatchQueue.main.async {
-            do { try self.configure(); call.resolve(self.route()) }
+            do { try self.configure(activate: activate); call.resolve(self.route()) }
             catch { self.deactivate(); call.reject("Audio session could not start: \(error.localizedDescription)") }
         }
     }
@@ -146,11 +150,11 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
             } else if session.recordPermission == .undetermined {
                 session.requestRecordPermission { granted in
                     DispatchQueue.main.async {
-                        if granted { self.configureCall(call) }
+                        if granted { self.configureCall(call, activate: false) }
                         else { call.reject("Microphone permission denied: enable in Settings → Harmony", "MIC_PERMISSION_DENIED") }
                     }
                 }
-            } else { self.configureCall(call) }
+            } else { self.configureCall(call, activate: false) }
         }
     }
     @objc func activate(_ call: CAPPluginCall) { configureCall(call) }
@@ -178,22 +182,22 @@ extension HarmonyViewController: WKScriptMessageHandler {
     }
     static let smokeScript = #"""
     (()=>{
-      const failureMode=false;
-      const result={secureContext:window.isSecureContext,origin:location.origin,test:'native-default-recording-notice',syntheticMic:true,realUploads:0,requests:[],paintedFrames:0,errors:[]};
+      const failureMode=false;const realMic=false;
+      const result={secureContext:window.isSecureContext,origin:location.origin,test:'native-default-recording-notice',syntheticMic:!realMic,realUploads:0,requests:[],paintedFrames:0,errors:[]};
       let firstPaint=null,done=false;
       const realFetch=window.fetch.bind(window);
       const visible=()=>{const n=document.getElementById('firstDebugNotice');if(!n)return false;const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.hidden&&r.width>0&&r.height>0&&r.top<innerHeight&&r.bottom>0&&s.display!=='none'&&s.visibility==='visible'&&Number(s.opacity)>0&&n.textContent.includes('Ideaflow');};
       const paint=()=>{if(visible()){result.paintedFrames++;firstPaint??=performance.now();}if(!done)requestAnimationFrame(paint);};requestAnimationFrame(paint);
       window.fetch=async(input,options)=>{const url=typeof input==='string'?input:input.url;if(url.includes('globalbr.ai/api/ingest/harmony/v1')){result.requests.push({path:new URL(url).pathname,method:options?.method||'GET',at:performance.now(),noticeVisible:visible(),paintedFrames:result.paintedFrames});return new Response(JSON.stringify({error:'synthetic_smoke_no_network'}),{status:503,headers:{'Content-Type':'application/json'}});}return realFetch(input,options);};
       window.addEventListener('error',e=>result.errors.push(e.message));
-      const report=()=>{if(done)return;done=true;window.harmonySinger?.stop();result.firstPaint=firstPaint;result.defaultRecordingOn=window.harmonyDebug?.enabled===true;result.nativeRoute=window.harmonyNativeRoute;result.running=window.harmonySinger?.isRunning;result.lastError=String(window.harmonySinger?.lastError||'');result.micFailures=window.harmonySinger?.getLog().filter(e=>e.type==='mic-start-failed');result.pass=result.errors.length===0&&result.beforeSingRequests===0&&result.defaultRecordingOn&&result.requests.length>0&&(failureMode?result.micFailures?.some(e=>e.name==='NotAllowedError'&&e.capture?.constraints?.audio):result.beforeStop?.running===true&&result.beforeStop?.liveAudio===true&&!result.lastError&&result.micFailures?.length===0)&&result.requests.every(r=>r.paintedFrames>1&&firstPaint!==null&&r.at>firstPaint);window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
+      const report=()=>{if(done)return;done=true;window.harmonySinger?.stop();result.firstPaint=firstPaint;result.defaultRecordingOn=window.harmonyDebug?.enabled===true;result.nativeRoute=window.harmonyNativeRoute;result.running=window.harmonySinger?.isRunning;result.lastError=String(window.harmonySinger?.lastError||'');result.micFailures=window.harmonySinger?.getLog().filter(e=>e.type==='mic-start-failed');result.pass=result.errors.length===0&&result.beforeSingRequests===0&&result.defaultRecordingOn&&result.requests.length>0&&(failureMode?result.micFailures?.some(e=>e.name==='NotAllowedError'&&e.capture?.constraints?.audio):result.beforeStop?.running===true&&result.beforeStop?.liveAudio===true&&result.beforeStop?.sourceAssigned===true&&result.beforeStop?.sourceContextMatches===true&&(!realMic||result.nativeRoute?.webViewCapture?.decision==='grant')&&!result.lastError&&result.micFailures?.length===0)&&result.requests.every(r=>r.paintedFrames>1&&firstPaint!==null&&r.at>firstPaint);window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
       window.addEventListener('DOMContentLoaded',()=>{
         // Install before the native adapter's DOM listener wraps capture.
-        navigator.mediaDevices.getUserMedia=async()=>{if(failureMode)throw new DOMException('Synthetic permission failure','NotAllowedError');const c=Tone.getContext().rawContext,o=c.createOscillator(),g=c.createGain(),d=c.createMediaStreamDestination();o.frequency.value=220;g.gain.value=.015;o.connect(g).connect(d);o.start();return d.stream;};
+        if(!realMic)navigator.mediaDevices.getUserMedia=async()=>{if(failureMode)throw new DOMException('Synthetic permission failure','NotAllowedError');const c=Tone.getContext().rawContext,o=c.createOscillator(),g=c.createGain(),d=c.createMediaStreamDestination();o.frequency.value=220;g.gain.value=.015;o.connect(g).connect(d);o.start();return d.stream;};
         setTimeout(async()=>{try{
         result.beforeSingRequests=result.requests.length;
         document.getElementById('startBtn').click();
-        setTimeout(()=>{const h=window.harmonySinger;result.beforeStop={running:h?.isRunning,liveAudio:h?.mediaStream?.getAudioTracks().some(t=>t.readyState==='live')===true};h?.stop();},5000);
+        setTimeout(()=>{const h=window.harmonySinger;result.beforeStop={running:h?.isRunning,liveAudio:h?.mediaStream?.getAudioTracks().some(t=>t.readyState==='live')===true,sourceAssigned:typeof h?.micSource?.connect==='function',sourceContextMatches:h?.micSource?.context===h?.audioContext};h?.stop();},5000);
         setTimeout(report,10000);
       }catch(e){result.errors.push(String(e));report();}},1500);});
       setTimeout(report,20000);
