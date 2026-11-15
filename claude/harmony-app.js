@@ -340,13 +340,13 @@ class HarmonySinger {
         this.echoMode = ['canceller', 'browser', 'none'].includes(echoParam) ? echoParam : 'canceller';
         if (this.echoMode === 'canceller' && !cancellerAvailable) this.echoMode = 'browser';
         this.cancellerAvailable = cancellerAvailable;
-        this.speakerCheck = this.params.get('check') !== '0';   // one-second noise burst at start to measure the speakers
+        this.speakerCheck = this.params.get('check') === '1';   // one-second noise burst at start to measure the speakers
         this.aecNode = null;
         this.aecStats = null;
         this.aecPending = {};
         this.aecSeq = 0;
         this.aecFrozen = false;
-        this.loopControl = cancellerAvailable ? new window.HarmonyEchoCanceller.SpeakerLoopControl({mode:'speakers',holdMs:this.extraProtection ? 600 : 800,minTrim:0.25,backoffDb:3,trimHigh:this.extraProtection ? 0.1 : 0.25,trimLow:this.extraProtection ? 0.07 : 0.17}) : null;
+        this.loopControl = cancellerAvailable ? new window.HarmonyEchoCanceller.SpeakerLoopControl({mode:'speakers',holdMs:450,minTrim:0.25,backoffDb:3,trimHigh:this.extraProtection ? 0.1 : 0.25,trimLow:this.extraProtection ? 0.07 : 0.17}) : null;
         this.speakerTrim = 1;
         this.calibrating = false;
         this.cancellerFailed = false;
@@ -367,7 +367,7 @@ class HarmonySinger {
         this.prevChordDeg = null;
         this.voicePresent = false;
         this.lastVoiceSeen = 0;
-        this.harmonyPosition = 'both';
+        this.harmonyPosition = 'above';
         this.choirVoices = { soprano: true, alto: true, tenor: true, bass: true };
 
         // Pitch tracking
@@ -809,7 +809,7 @@ class HarmonySinger {
 
     setExtraProtection(on) {
         this.extraProtection=!!on;
-        if(this.loopControl){this.loopControl.mode=on?'protected':'speakers';this.loopControl.holdMs=on?600:800;this.loopControl.trimHigh=on?0.1:0.25;this.loopControl.trimLow=on?0.07:0.17;}
+        if(this.loopControl){this.loopControl.mode=on?'protected':'speakers';this.loopControl.holdMs=450;this.loopControl.trimHigh=on?0.1:0.25;this.loopControl.trimLow=on?0.07:0.17;}
         if(this.lpFilter&&this.speakerMode)this.lpFilter.frequency.rampTo(on?8000:10000,0.1);
         if(!on)this.duckUntil=0;
         this.logEvent('extra-protection',{on:!!on}); this.updateGains();
@@ -820,7 +820,7 @@ class HarmonySinger {
         if (![0,1].includes(position) || position === this.outputPosition) return;
         const wasSpeaker = this.speakerMode;
         this.outputPosition = position;
-        if (this.loopControl) { this.loopControl.holdMs=this.extraProtection ? 600 : 800; this.loopControl.trimHigh = this.extraProtection ? 0.1 : 0.25; this.loopControl.trimLow = this.extraProtection ? 0.07 : 0.17; }
+        if (this.loopControl) { this.loopControl.holdMs=450; this.loopControl.trimHigh = this.extraProtection ? 0.1 : 0.25; this.loopControl.trimLow = this.extraProtection ? 0.07 : 0.17; }
         this.logEvent('output-profile', {position});
         if (wasSpeaker && position>0) {
             if(this.lpFilter) this.lpFilter.frequency.rampTo(position===1 ? 10000 : 8000,0.1);
@@ -1223,7 +1223,7 @@ class HarmonySinger {
             inputNode.connect(this.guardAnalyser);
 
             // ---- guarded input: [highpass -> notch bank] in speaker mode, straight through otherwise
-            this.mic = new Tone.Gain(1);
+            this.isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);this.inputMakeup=this.isIOS?4:1;this.mic = new Tone.Gain(this.inputMakeup);this.logEvent('input-makeup',{gain:this.inputMakeup,platform:this.isIOS?'iOS':'other'});
             this.notchNodes = [];
             this.notches = [];
             if (this.speakerMode) {
@@ -1731,6 +1731,7 @@ class HarmonySinger {
     // ---------- Pitch detection + feedback guard loop ----------
 
     startPitchDetection() {
+        this.lastDetectAt=0;this.quietVoiceGate=new HarmonyQuietVoice.QuietVoiceGate();
         const buf = new Float32Array(this.pitchAnalyser.fftSize);
         const detect = () => {
             if (!this.isRunning) return;
@@ -1744,20 +1745,23 @@ class HarmonySinger {
             rms = Math.sqrt(rms / buf.length);
             this.lastInputRms = rms;
             let pitch = yinPitch(buf, this.audioContext.sampleRate);
-            let voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.004);
+            let voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.0004);
 
             // Spectral analysis every ~100 ms: classify the input and hunt for howls.
             if (this.frameCounter % GUARD.analyseEveryFrames === 0) {
                 this.analyseSpectrum(voiced ? pitch : null, now);
             }
 
+            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active)});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
+            if(this.isIOS&&this.mic){const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);const target=Math.min(4,Math.max(1,.02/Math.max(rawLevel,.005)));this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup?.2:.025);this.mic.gain.rampTo(this.inputMakeup,.12);}
+
             // Speaker mode with the canceller: ask the loop controller whether what we hear is the
             // singer or just the part of our own harmonies the canceller could not remove. Leftover
             // echo must not steer the pitch tracker, hold instrument notes or keep the gate open.
             let loop = null;
             if (this.usingCanceller() && this.aecNode && this.loopControl) {
-                loop = this.loopControl.update({ now, voiced: voiced && !this.pureTone, stats: this.aecStats });
-                if (!loop.nearOk || this.calibrating) voiced = false;
+                loop = this.loopControl.update({ now, voiced: voiceLike, stats: this.aecStats });
+                if ((!loop.nearOk&&!decision.quietReference&&!decision.nearDominant) || this.calibrating) voiced = false;
                 if (Math.abs(loop.trim - this.speakerTrim) > 0.01 || (loop.trim === 1 && this.speakerTrim !== 1)) {
                     this.speakerTrim = loop.trim;
                     if (this.trimGain) this.trimGain.gain.rampTo(loop.trim, 0.04);
@@ -1813,7 +1817,7 @@ class HarmonySinger {
             }
 
             // Voice presence (both modes) drives instrument note on/off.
-            if (voiced && !this.pureTone) this.lastVoiceSeen = now;
+            if (voiced && (!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoiceSeen = now;
             const present = now - this.lastVoiceSeen < 400;
             if (present !== this.voicePresent) {
                 this.voicePresent = present;
@@ -1826,13 +1830,13 @@ class HarmonySinger {
 
             // Harmony gate (speaker mode): only sing along while a real voice is present.
             if (this.speakerMode) {
-                if (voiced && !this.pureTone) this.lastVoicedAt = now;
-                const shouldOpen = loop ? (loop.gateOpen && !this.calibrating) : now - this.lastVoicedAt < 600;
+                if (voiced && (!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoicedAt = now;
+                const shouldOpen = loop ? (loop.gateOpen && !this.calibrating) : now - this.lastVoicedAt < 450;
                 if (shouldOpen !== this.gateOpen) {
                     this.gateOpen = shouldOpen;
                     this.gateGain.gain.rampTo(shouldOpen ? 1 : 0, shouldOpen ? 0.03 : 0.15);
                     this.updateGuardStatus();
-                    this.logEvent('gate', { open: shouldOpen });
+                    this.logEvent('gate', { open: shouldOpen,threshold:decision.threshold,noiseFloor:decision.noiseFloor,reason:decision.reason,stablePitch:decision.stable,allowTonal:decision.allowTonal });
                 }
                 if (this.duckUntil && now > this.duckUntil) { this.duckUntil = 0; this.updateGains(); }
             }
@@ -1841,7 +1845,7 @@ class HarmonySinger {
             if (now - this.lastStatLog > 500) {
                 this.lastStatLog = now;
                 this.logEvent('stats', {
-                    rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
+                    voiceDecision:decision,inputMakeupGain:this.inputMakeup||1,rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
                     gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
                     peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)]),
                     ...(loop && this.aecStats ? { aec: {

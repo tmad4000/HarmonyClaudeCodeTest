@@ -1,3 +1,17 @@
+# 2026-11-15-phone-gate-1
+
+Updated 2026-11-15T12:19:00.451Z. Stable v2-1 base; no Saves, boost or later output crossfade.
+
+- Quiet phone voices use an adaptive noise floor, separate open/close levels and 450 ms hold. Stable, fundamental-dominant notes can continue when near-end evidence is strong; confirmed feedback remains excluded. Decisions and thresholds are logged. iOS gets bounded digital microphone makeup (up to 4x), while raw diagnostics stay before that gain. Browser AGC/NS behavior is unchanged.
+- Fresh users start with Third above only; saved settings win. Speaker check is off unless requested, and remains available in Settings with its sound warning.
+- Mobile-only dismissible experimental notice. Recording has a persistent off choice; raw microphone counters, track/context/route/visibility events are stored locally every 250 ms. Export debug session is visible below Sing. Upload remains disabled; privacy text says so.
+- Network-only update worker uses skipWaiting/clients.claim, plus idle-only fresh-version checks. It defers reload while audio or recording finalization is active. Previously loaded old tabs need one refresh to receive this guard; a service worker was not present in the old v2 source.
+- Suggestion box keeps the same board and loads only after a tap. Updated replaces Built.
+
+Validation: quiet-tone/noise/feedback/silence regression; private iPhone event replay corrected held-tone gate decisions from 42% to 100%; raw audio replay through sandboxed Chrome at 48 kHz improved quiet output (Linux Chrome with iPhone UA is not a physical iPhone test). Root's exported audio remains private and is never included in the site/repo. Real phone validation is still required.
+
+---
+
 # Speaker/debug release — 2026-11-15
 
 Canonical GitHub source is tmad4000/HarmonyClaudeCodeTest; candidate branch claude/speaker-harmony-overhaul. The separately configured Sites source project appgprj_6af7d8fbba108191a3478ee36e1f9fda publishes claude/ as dist/. Preserve the existing neural experiment, settings restoration, version checks and relative build-time formatter.
