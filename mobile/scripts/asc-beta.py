@@ -29,7 +29,7 @@ def main():
   source_app=asc.api('/v1/apps/'+saved['sourceAppId'])['data']
   if source_app['attributes']['name']!=saved['sourceApp']:raise RuntimeError('Contact source app changed')
   proof=saved['approvedExternalReview']
-  review=asc.api('/v1/betaAppReviewSubmissions/'+proof['reviewId'])['data']
+  review=asc.api('/v1/betaAppReviewSubmissions/'+proof['reviewId']+'?include=build')['data']
   if review['attributes']['betaReviewState']!='APPROVED' or review['relationships']['build']['data']['id']!=proof['buildId']:raise RuntimeError('Contact source external approval not verified')
   reviewed_build=asc.api('/v1/builds/'+proof['buildId']+'?include=app')['data']
   if reviewed_build['relationships']['app']['data']['id']!=saved['sourceAppId']:raise RuntimeError('Approved source build belongs to another app')
@@ -46,10 +46,13 @@ def main():
   if len(groups)!=1 or groups[0]['attributes']['isInternalGroup'] or groups[0]['attributes'].get('publicLinkEnabled'):raise RuntimeError('Wrong external group')
   asc.api('/v1/builds/'+args.build_id+'/relationships/betaGroups','POST',{'data':[{'type':'betaGroups','id':groups[0]['id']}]})
   after=asc.api('/v1/apps/'+aid+'/betaAppReviewDetail')['data']['attributes']
-  if any(after.get(k)!=v for k,v in contact.items()):raise RuntimeError('Contact readback mismatch')
+  if any(after.get(k)!=v for k,v in dict(contact,demoAccountRequired=False,notes=NOTES).items()):raise RuntimeError('Contact readback mismatch')
   local=asc.list('/v1/apps/'+aid+'/betaAppLocalizations?limit=200');local=[x for x in local if x['attributes'].get('locale')=='en-US']
   if len(local)!=1 or local[0]['attributes'].get('feedbackEmail')!=contact['contactEmail'] or local[0]['attributes'].get('privacyPolicyUrl')!='https://harmony.jacobcole.net/privacy':raise RuntimeError('Beta localization readback mismatch')
-  linked=asc.list('/v1/builds/'+args.build_id+'/betaGroups')
+  builds=asc.list('/v1/builds/'+args.build_id+'/betaBuildLocalizations?limit=200');builds=[x for x in builds if x['attributes'].get('locale')=='en-US']
+  if len(builds)!=1 or builds[0]['attributes'].get('whatsNew')!=WHAT:raise RuntimeError('What-to-test readback mismatch')
+  if local[0]['attributes'].get('description')!=DESCRIPTION:raise RuntimeError('Beta description readback mismatch')
+  linked=asc.groups_for_build(args.build_id)
   if groups[0]['id'] not in [g['id'] for g in linked]:raise RuntimeError('External group attachment readback mismatch')
   print(json.dumps({'prepared':True,'appId':aid,'buildId':args.build_id,'build':build['attributes']['version'],'contactCopiedFrom':source,'contactValuesPrinted':False,'externalGroupId':groups[0]['id'],'publicLink':False,'privacyLabel':'draft, not submitted'}))
  elif args.command=='submit':

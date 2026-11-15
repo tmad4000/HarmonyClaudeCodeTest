@@ -87,6 +87,18 @@ class ASC:
         return {'bundleId': BUNDLE, 'id': matches[0]['id'],
                 'platform': matches[0]['attributes']['platform']}
 
+    def groups_for_build(self, build_id):
+        # Apple supports this include; the related /builds/{id}/betaGroups GET is forbidden.
+        response=self.api('/v1/builds/'+urllib.parse.quote(build_id,safe='')+'?include=betaGroups')
+        relation=response['data']['relationships']['betaGroups']
+        links=relation['data']
+        if relation.get('meta',{}).get('paging',{}).get('total',len(links))!=len(links):
+            raise RuntimeError('Build group linkage is truncated; inspect before mutation')
+        ids={g['id'] for g in links}
+        groups=[g for g in response.get('included',[]) if g['type']=='betaGroups' and g['id'] in ids]
+        if len(groups)!=len(ids):raise RuntimeError('Build group include incomplete')
+        return groups
+
     def internal(self, build_id):
         app = self.app()
         response = self.api('/v1/builds/' + urllib.parse.quote(build_id, safe='') + '?include=preReleaseVersion,app')
@@ -96,7 +108,7 @@ class ASC:
         attrs = build['attributes']
         if attrs['processingState'] != 'VALID' or attrs.get('buildAudienceType') != 'APP_STORE_ELIGIBLE':
             raise RuntimeError('Build must be VALID and APP_STORE_ELIGIBLE before attaching')
-        existing = self.list('/v1/builds/' + build_id + '/betaGroups')
+        existing = self.groups_for_build(build_id)
         if any(not x['attributes']['isInternalGroup'] or x['attributes'].get('publicLinkEnabled') for x in existing):
             raise RuntimeError('Unexpected external/public group on this build')
         groups = self.find('betaGroups', 'app', app['id'])
@@ -116,7 +128,7 @@ class ASC:
         group = internal[0]
         self.api('/v1/builds/' + build_id + '/relationships/betaGroups', 'POST',
                  {'data': [{'type': 'betaGroups', 'id': group['id']}]})
-        linked = self.list('/v1/builds/' + build_id + '/betaGroups')
+        linked = self.groups_for_build(build_id)
         if group['id'] not in [g['id'] for g in linked] or any(
                 not g['attributes']['isInternalGroup'] or g['attributes'].get('publicLinkEnabled') for g in linked):
             raise RuntimeError('Internal-only group readback failed')
