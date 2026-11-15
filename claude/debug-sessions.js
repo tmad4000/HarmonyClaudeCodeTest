@@ -58,7 +58,7 @@
                 const events = h.getLog().slice(-100).map(sanitize), settings = h.snapshotSettings();
                 this.activeId=id;this.latestId=id;
                 const row = {id,started,settings,events,bytes:0,mimeType:rec.mimeType,version:document.querySelector('meta[name="harmony-version"]')?.content || 'unavailable',buildTime:document.getElementById('buildTime')?.getAttribute('datetime'),browser:navigator.userAgent};
-                const persist=async(chunk)=>{try{await this.write({...row,events:events.slice(),bytes},false,chunk);await this.prune();}catch(_){failed=true;if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage full or unavailable');}};
+                const persist=async(chunk)=>{try{await this.write({...row,events:events.slice(),bytes},false,chunk);}catch(_){failed=true;if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage full or unavailable');}};
                 await this.write({...row});
                 if (!this.enabled || !h.isRunning || generation !== this.generation || this.recorder !== rec) { cleanup(); return; }
                 this.event = e => { if (events.length < 20000) events.push(sanitize(e)); };
@@ -71,7 +71,7 @@
                 };
                 rec.onstop = async () => {
                     cleanup(); row.audioEnded=Date.now();
-                    await persist();this.finalizing.delete(id);
+                    await persist();try{await this.store.prune();}catch(_){}this.finalizing.delete(id);
                     if (!failed && !this.audioLimited && !this.recorder && !this.starting) this.status(this.enabled ? 'Debug session saved · ready for next start' : 'Debug recording OFF · session saved');
                 };
                 rec.onerror = () => { if(this.recorder===rec){this.status('Debug recorder failed');this.stop();} };
