@@ -291,6 +291,7 @@ class HarmonySinger {
         this.analyser = null;       // Tone waveform analyser (visualizer)
         this.pitchAnalyser = null;  // analyser on the guarded input for YIN
         this.guardAnalyser = null;  // analyser on the raw input for howl detection
+        this.debugRawAnalyser = null; // parallel pre-AEC meter only; guard itself can be post-AEC
         this.postGuardAnalyser = null;
         this.hpFilter = null;
         this.notchNodes = [];       // BiquadFilter notch bank (speaker mode)
@@ -393,6 +394,10 @@ class HarmonySinger {
         this.duckUntil = 0;
         this.guardEvents = 0;
         this.lastInputRms = 0;
+        this.debugContinuous = false; // diagnostic only, never restored from browser settings
+        this.debugMeterBuffers = new WeakMap();
+        this.debugMeterAt = -Infinity;
+        this.debugMeterValue = null;
 
         // Debug log + recording
         this.log = [];
@@ -447,6 +452,7 @@ class HarmonySinger {
             smoothing: this.smoothing, harmonyPosition: this.harmonyPosition, choirVoices: { ...this.choirVoices },
             backing: this.backing, backingStyle: this.backingStyle,
             outputProtection: this.outputPosition, extraProtection: this.extraProtection, outputLabel:this.outputLabel,
+            debugContinuous: this.debugContinuous,
             sampleRate: this.audioContext ? this.audioContext.sampleRate : null,
             notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz))
         };
@@ -1045,14 +1051,81 @@ class HarmonySinger {
         if (this.isRunning) this.stop(); else await this.start();
     }
 
+    /** Normal safety classification continues running even while its VAD gate is bypassed. */
+    normalHarmonyGate(now = performance.now()) {
+        if (!this.speakerMode) return true;
+        if (this.calibrating) return false;
+        if (this.usingCanceller() && this.aecNode && this.loopControl) {
+            return now - this.loopControl.lastNearAt < this.loopControl.holdMs;
+        }
+        return now - this.lastVoicedAt < 450;
+    }
+
+    setDebugContinuous(on) {
+        on = !!on;
+        if (on === this.debugContinuous) return;
+        this.debugContinuous = on;
+        const now = performance.now();
+        if (this.duckUntil && this.duckUntil <= now) this.duckUntil = 0;
+        if (this.isRunning && this.gateGain) {
+            this.gateOpen = (on && !this.calibrating) || this.normalHarmonyGate(now);
+            this.gateGain.gain.rampTo(this.gateOpen ? 1 : 0, 0.03);
+            this.updateGains();
+            this.updateGuardStatus();
+        }
+        this.debugMeterValue = null;
+        this.logEvent('debug-continuous', { on, gate: this.gateOpen });
+    }
+
+    /** UI-pulled meters: at most 10 Hz, reused arrays, no audio-path callback or encoder. */
+    debugAudioLevels() {
+        const now = performance.now(), ctx = this.audioContext, state = ctx?.state || 'not-started';
+        if (this.debugMeterValue && now - this.debugMeterAt < 100 && this.debugMeterValue.contextState === state && this.debugMeterValue.running === this.isRunning) return this.debugMeterValue;
+        const rmsOf = node => {
+            if (!this.isRunning || state !== 'running' || !node) return null;
+            let buffer = this.debugMeterBuffers.get(node);
+            if (!buffer || buffer.length !== node.fftSize) {
+                buffer = new Float32Array(node.fftSize);
+                this.debugMeterBuffers.set(node, buffer);
+            }
+            node.getFloatTimeDomainData(buffer);
+            let power = 0;
+            for (const value of buffer) power += value * value;
+            return Math.sqrt(power / buffer.length);
+        };
+        const raw = this.debugRawAnalyser || (!this.aecNode ? this.guardAnalyser : null);
+        const rawMicRms = rmsOf(raw), outputRms = rmsOf(this.outTap);
+        const db = value => value === null ? null : 20 * Math.log10(Math.max(value, 1e-6));
+        this.debugMeterAt = now;
+        return (this.debugMeterValue = {
+            rawMicRms, outputRms, micDb: db(rawMicRms), outputDb: db(outputRms),
+            rawTap: raw ? (this.debugRawAnalyser ? 'pre-canceller' : 'raw-guard') : null,
+            running: this.isRunning, gate: this.gateOpen, normalGate: this.normalHarmonyGate(now),
+            voicePresent: this.voicePresent, debugContinuous: this.debugContinuous,
+            contextState: state, sampleRate: ctx?.sampleRate ?? null,
+            baseLatency: ctx?.baseLatency ?? null, outputLatency: ctx?.outputLatency ?? null,
+            canceller: !!this.aecNode, trim: this.speakerTrim,
+            ducking: !this.debugContinuous && this.speakerMode && now < this.duckUntil
+        });
+    }
+
     async start() {
         if (this.starting || this.isRunning) return;
         this.starting = true;
         this.lastError = null;
         try {
-            await Tone.start();
+            // Both resume calls are initiated before yielding the Sing gesture.
+            // Do not force AudioSession.type: it can change routing and playback volume.
+            const existingContext = Tone.getContext().rawContext;
+            const starting = [Tone.start()];
+            if (existingContext?.resume && ['suspended', 'interrupted'].includes(existingContext.state)) starting.push(existingContext.resume());
+            await Promise.all(starting);
             this.audioContext = Tone.getContext().rawContext;
             const ctx = this.audioContext;
+            let audioSession = { supported: false };
+            try { if (navigator.audioSession) audioSession = { supported: true, type: navigator.audioSession.type, state: navigator.audioSession.state }; }
+            catch (error) { audioSession = { supported: true, readable: false, error: error.name }; }
+            this.logEvent('sing-context', { state: ctx.state, sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency ?? null, outputLatency: ctx.outputLatency ?? null, audioSession });
             if(!ctx.__harmonyLogged){ctx.__harmonyLogged=true;ctx.addEventListener('statechange',()=>this.logEvent('context-state',{state:ctx.state}));}
             const roomSim = this.params.get('room') === '1';
             let useCanceller = this.usingCanceller();
@@ -1221,6 +1294,12 @@ class HarmonySinger {
             this.guardAnalyser.fftSize = 4096;
             this.guardAnalyser.smoothingTimeConstant = 0.2;
             inputNode.connect(this.guardAnalyser);
+            if (useCanceller) {
+                // The howl guard above intentionally sees cleaned input. Keep the raw meter honest.
+                this.debugRawAnalyser = ctx.createAnalyser();
+                this.debugRawAnalyser.fftSize = 2048;
+                this.micSource.connect(this.debugRawAnalyser);
+            }
 
             // ---- guarded input: [highpass -> notch bank] in speaker mode, straight through otherwise
             this.isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);this.inputMakeup=this.isIOS?4:1;this.mic = new Tone.Gain(this.inputMakeup);this.logEvent('input-makeup',{gain:this.inputMakeup,platform:this.isIOS?'iOS':'other'});
@@ -1615,7 +1694,7 @@ class HarmonySinger {
         // Without the canceller, speaker mode needs a fixed cut for gain-before-feedback. With it, level is
         // only held back when the measured loop needs it (speakerTrim, applied on trimGain).
         const cap = (this.speakerMode && (!this.usingCanceller() || this.extraProtection)) ? 0.7 : 1;
-        const duck = (this.speakerMode && performance.now() < this.duckUntil) ? 0.5 : 1;
+        const duck = (!this.debugContinuous && this.speakerMode && performance.now() < this.duckUntil) ? 0.5 : 1;
         const voiceOn = (this.backing === 'voice' || this.backing === 'voice+piano') ? 1 : 0;
         if (this.instGain) this.instGain.gain.value = this.instrumentKind() ? this.harmonyVolume * 0.9 * (this.speakerMode ? 0.85 : 1) : 0;
         Object.keys(this.gains).forEach(key => {
@@ -1677,6 +1756,9 @@ class HarmonySinger {
         clearTimeout(this.pitchTimer);
         if (this.isRecording()) this.stopRecording();
         this.isRunning = false;
+        if (this.debugContinuous) this.logEvent('debug-continuous', { on: false, reason: 'stop' });
+        this.debugContinuous = false;
+        this.debugMeterValue = null;
         this.logEvent('stop', {});
         if (this.mediaStream) {
             if(preserveInput)this.reusableStream=this.mediaStream;else this.mediaStream.getTracks().forEach(t=>t.stop());
@@ -1705,9 +1787,10 @@ class HarmonySinger {
         }
         this.refDelay = null; this.monoNode = null; this.outTap = null; this.roomNodes = []; this.roomBus = null;
         this.roomGainNode = null; this.roomDelayNode = null; this.nearTap = null; this.echoTap = null;
-        const nativeNodes = [this.micSource, this.guardAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
+        const nativeNodes = [this.micSource, this.guardAnalyser, this.debugRawAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
         nativeNodes.forEach(n => { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } });
         this.micSource = null; this.guardAnalyser = null; this.pitchAnalyser = null; this.postGuardAnalyser = null; this.hpFilter = null;
+        this.debugRawAnalyser = null;
         this.notchNodes = [];
         this.notches = [];
         this.disposeVoices();
@@ -1745,6 +1828,7 @@ class HarmonySinger {
             rms = Math.sqrt(rms / buf.length);
             this.lastInputRms = rms;
             let pitch = yinPitch(buf, this.audioContext.sampleRate);
+            const diagnosticPitch = Number.isFinite(pitch) && pitch > 60 && pitch < 2000 && rms > 0;
             let voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.0004);
 
             // Spectral analysis every ~100 ms: classify the input and hunt for howls.
@@ -1768,12 +1852,17 @@ class HarmonySinger {
                 }
                 // unison / octave voices are copies of the singer: adapting on them teaches the canceller
                 // to remove the singer. Learn only in the gaps while such a voice is sounding.
-                const freeze = loop.gateOpen && this.coherentVoices();
+                const freeze = (loop.gateOpen || this.debugContinuous) && this.coherentVoices();
                 if (freeze !== this.aecFrozen) {
                     this.aecFrozen = freeze;
                     this.aecNode.port.postMessage({ type: 'config', adapt: !freeze });
                 }
             }
+
+            // Keep the loop controller/near-end safety estimates normal. Only bypass
+            // VAD for tracking the real input, never synthesize a voice or reference.
+            const normalVoiced = voiced;
+            if (this.debugContinuous && !this.calibrating) voiced = diagnosticPitch;
 
             if (voiced) {
                 // Continuity: if the new estimate is an octave/harmonic flip of what we were tracking,
@@ -1817,7 +1906,7 @@ class HarmonySinger {
             }
 
             // Voice presence (both modes) drives instrument note on/off.
-            if (voiced && (!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoiceSeen = now;
+            if (voiced && (this.debugContinuous||!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoiceSeen = now;
             const present = now - this.lastVoiceSeen < 400;
             if (present !== this.voicePresent) {
                 this.voicePresent = present;
@@ -1830,8 +1919,8 @@ class HarmonySinger {
 
             // Harmony gate (speaker mode): only sing along while a real voice is present.
             if (this.speakerMode) {
-                if (voiced && (!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoicedAt = now;
-                const shouldOpen = loop ? (loop.gateOpen && !this.calibrating) : now - this.lastVoicedAt < 450;
+                if (normalVoiced && (!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoicedAt = now;
+                const shouldOpen = (this.debugContinuous && !this.calibrating) || this.normalHarmonyGate(now);
                 if (shouldOpen !== this.gateOpen) {
                     this.gateOpen = shouldOpen;
                     this.gateGain.gain.rampTo(shouldOpen ? 1 : 0, shouldOpen ? 0.03 : 0.15);
