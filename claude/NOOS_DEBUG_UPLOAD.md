@@ -70,3 +70,5 @@ Independent follow-up review approved module SHA256 `966798c1b17cb5f1a05d1524b5b
 The indicator follow-up SHA256 `17f265fff199d003b66452a2283eb806eabc42968b24a3e26b2895580784c760` is independently approved. Server413/429/507 classification uses a short limit label without inventing a daily reset; the429 contract test verifies Retry-After and recovery. Request/backoff and activation gates are unchanged.
 
 Final launch copy/layout delta94c5fdd6 is independently approved. Standard, notice and contract/recovery mock tests passed;390px one-line and320px short-screen notice checks made zeroNoosrequests. A real public one-session verification and scoped removal follow publication; do not claim their result before its receipt.
+
+Launch delta4481d630 is independently approved: Ideaflow identity disclosure, grouped notice controls, short-screen layout and polite stateful button labels. The enabled endpoint is exactly the accepted Noos URL. Root accepted the backend pilot receipt and authorized publication; the distinct release still requires its public one-session verification receipt.

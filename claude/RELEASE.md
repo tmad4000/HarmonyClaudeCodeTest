@@ -1,6 +1,6 @@
 # 2026-11-15-noos-debug-1
 
-Updated 2026-11-15T14:48:58Z.
+Updated 2026-11-15T14:57:09Z.
 
 Beta debug sessions are sent automatically to Ideaflow (Jacob Cole and those working on Harmony with him, including AI assistants) after Sing and the recording notice. Recording turns capture and transfer off in one click; a prior Off stays off. Old local-only sessions are never uploaded.
 
