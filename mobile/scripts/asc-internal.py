@@ -72,7 +72,7 @@ class ASC:
 
     def app(self):
         apps = self.find('apps', 'bundleId', BUNDLE)
-        if len(apps) != 1 or apps[0]['attributes']['name'] != 'Harmony':
+        if len(apps) != 1 or apps[0]['attributes']['name'] != 'Harmony by Ideaflow':
             raise RuntimeError('Exact Harmony ASC app record unavailable; website owner required')
         return apps[0]
 
@@ -94,8 +94,8 @@ class ASC:
         if build['relationships']['app']['data']['id'] != app['id']:
             raise RuntimeError('Build belongs to another app')
         attrs = build['attributes']
-        if attrs['processingState'] != 'VALID' or attrs.get('buildAudienceType') != 'INTERNAL_ONLY':
-            raise RuntimeError('Build must be VALID and INTERNAL_ONLY before attaching')
+        if attrs['processingState'] != 'VALID' or attrs.get('buildAudienceType') != 'APP_STORE_ELIGIBLE':
+            raise RuntimeError('Build must be VALID and APP_STORE_ELIGIBLE before attaching')
         existing = self.list('/v1/builds/' + build_id + '/betaGroups')
         if any(not x['attributes']['isInternalGroup'] or x['attributes'].get('publicLinkEnabled') for x in existing):
             raise RuntimeError('Unexpected external/public group on this build')
@@ -121,7 +121,7 @@ class ASC:
                 not g['attributes']['isInternalGroup'] or g['attributes'].get('publicLinkEnabled') for g in linked):
             raise RuntimeError('Internal-only group readback failed')
         return {'buildId': build_id, 'build': attrs['version'], 'processingState': 'VALID',
-                'audience': 'INTERNAL_ONLY', 'groups': [g['attributes']['name'] for g in linked]}
+                'audience': 'APP_STORE_ELIGIBLE', 'groups': [g['attributes']['name'] for g in linked]}
 
 
 def main():

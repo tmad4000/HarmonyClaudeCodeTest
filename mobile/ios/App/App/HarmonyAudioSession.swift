@@ -12,6 +12,12 @@ class HarmonyViewController: CAPBridgeViewController {
         let config = super.webViewConfiguration(for: instanceConfiguration)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--harmony-smoke") {
+            config.userContentController.add(self, name: "harmonySmoke")
+            config.userContentController.addUserScript(WKUserScript(source: Self.smokeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        #endif
         return config
     }
 }
@@ -111,3 +117,34 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
         }
     }
 }
+
+#if DEBUG
+extension HarmonyViewController: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "harmonySmoke", JSONSerialization.isValidJSONObject(message.body),
+              let bytes = try? JSONSerialization.data(withJSONObject: message.body, options: [.prettyPrinted, .sortedKeys]),
+              let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        try? bytes.write(to: folder.appendingPathComponent("harmony-smoke.json"), options: .atomic)
+    }
+    static let smokeScript = #"""
+    (()=>{
+      const result={test:'native-default-recording-notice',syntheticMic:true,realUploads:0,requests:[],paintedFrames:0,errors:[]};
+      let firstPaint=null,done=false;
+      const realFetch=window.fetch.bind(window);
+      const visible=()=>{const n=document.getElementById('firstDebugNotice');if(!n)return false;const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.hidden&&r.width>0&&r.height>0&&r.top<innerHeight&&r.bottom>0&&s.display!=='none'&&s.visibility==='visible'&&Number(s.opacity)>0&&n.textContent.includes('Ideaflow');};
+      const paint=()=>{if(visible()){result.paintedFrames++;firstPaint??=performance.now();}if(!done)requestAnimationFrame(paint);};requestAnimationFrame(paint);
+      window.fetch=async(input,options)=>{const url=typeof input==='string'?input:input.url;if(url.includes('globalbr.ai/api/ingest/harmony/v1')){result.requests.push({path:new URL(url).pathname,method:options?.method||'GET',at:performance.now(),noticeVisible:visible(),paintedFrames:result.paintedFrames});return new Response(JSON.stringify({error:'synthetic_smoke_no_network'}),{status:503,headers:{'Content-Type':'application/json'}});}return realFetch(input,options);};
+      window.addEventListener('error',e=>result.errors.push(e.message));
+      const report=()=>{if(done)return;done=true;window.harmonySinger?.stop();result.firstPaint=firstPaint;result.defaultRecordingOn=window.harmonyDebug?.enabled===true;result.nativeRoute=window.harmonyNativeRoute;result.running=window.harmonySinger?.isRunning;result.lastError=window.harmonySinger?.lastError;result.pass=result.defaultRecordingOn&&result.requests.length>0&&result.requests.every(r=>r.noticeVisible&&r.paintedFrames>1&&r.at>firstPaint);window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
+      window.addEventListener('DOMContentLoaded',()=>setTimeout(async()=>{try{
+        result.beforeSingRequests=result.requests.length;
+        navigator.mediaDevices.getUserMedia=async()=>{const c=Tone.getContext().rawContext,o=c.createOscillator(),g=c.createGain(),d=c.createMediaStreamDestination();o.frequency.value=220;g.gain.value=.015;o.connect(g).connect(d);o.start();return d.stream;};
+        document.getElementById('startBtn').click();
+        setTimeout(()=>window.harmonySinger?.stop(),5000);
+        setTimeout(report,10000);
+      }catch(e){result.errors.push(String(e));report();}},1500));
+      setTimeout(report,20000);
+    })();
+    """#
+}
+#endif
