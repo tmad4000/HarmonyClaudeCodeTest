@@ -1,10 +1,13 @@
-# Noos beta debug uploader — activation pending
+# Noos beta debug uploader
 
-This source prepares the existing Harmony debug recorder for the write-only
-Noos drop-box at `https://globalbr.ai/api/ingest/harmony/v1`.
-`debug-endpoint.js` deliberately retains an empty endpoint and
-`HARMONY_DEBUG_UPLOAD_ENABLED = false`. This branch is not a claim that the
-backend or public uploads are live. The existing local Export remains available.
+This release configures the write-only Noos drop-box at
+`https://globalbr.ai/api/ingest/harmony/v1` and enables beta transfer by default,
+respecting a prior Recording off choice. Root explicitly chose the disclosed
+option(a), then accepted backend .46/source09181c6 pilot receipt SHA256
+`66f92f8d576ad591912081784d37b5e38956437b79fed0c0e2a89f9952c51e54`.
+The notice names Ideaflow, and Privacy identifies Jacob/team including AI assistants.
+Removal ends access; inaccessible backup copies may persist with no verified
+maximum. No immediate or complete physical-purge promise is made.
 
 The uploader reuses the existing encoder. It persists immutable event/audio tasks
 in its own IndexedDB outbox, validates upload acknowledgements, and retries the
@@ -38,7 +41,7 @@ The reviewed display-only follow-up is
 Separate instrumentation counted exactly one MediaRecorder. These are Linux
 browser checks, not physical iPhone acceptance.
 
-Before activation: obtain the accepted backend release; verify one synthetic
+Backend activation gates have been accepted by root. The release verification checklist remains: verify one synthetic
 public save, private owner byte/hash readback, unauthorized read denial, exact
 Harmony CORS and confirmed deletion; finish Fable's notice/indicator/privacy
 review, including truthful provider recovery retention. Then set the endpoint
@@ -65,3 +68,5 @@ app and the anonymous device. No IP or account identity is added by this client.
 Independent follow-up review approved module SHA256 `966798c1b17cb5f1a05d1524b5b85daca6dcc6ee0bba3beb117a694ebd8d6b26`: updated sandboxed contract/count tests passed, including pending202, confirmed scoped counts, old-epoch replay and access-based summaries. This does not approve public activation.
 
 The indicator follow-up SHA256 `17f265fff199d003b66452a2283eb806eabc42968b24a3e26b2895580784c760` is independently approved. Server413/429/507 classification uses a short limit label without inventing a daily reset; the429 contract test verifies Retry-After and recovery. Request/backoff and activation gates are unchanged.
+
+Final launch copy/layout delta94c5fdd6 is independently approved. Standard, notice and contract/recovery mock tests passed;390px one-line and320px short-screen notice checks made zeroNoosrequests. A real public one-session verification and scoped removal follow publication; do not claim their result before its receipt.
