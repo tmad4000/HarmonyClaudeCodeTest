@@ -28,8 +28,11 @@ Owner: `f7e222be` on behalf of `d3caa262`; persistent trial service, not a tempo
 preview. `systemctl --user` requires `XDG_RUNTIME_DIR=/run/user/1002` and
 `DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1002/bus` in this host's tool shell.
 The service binds loopback and explicit tailnet IPv4 100.116.136.69 on port 9918.
-The socket is listening but tailnet connection probes are refused; this route is
-not yet verified reachable. Loopback health and browser tests pass. Private HTTPS forwarding needs an authorized
+The HTTP WAV page is peer-verified at http://jacob-dev-1.tailb2a35c.ts.net:9918/:
+M4 GET / and /health both return200. This host cannot self-connect to its own
+tailnet address; a local refused probe is not a firewall diagnosis. Microphone
+recording still requires HTTPS; route A provides browser-only recording/rendering
+on the public site once the canonical publisher deploys it. Private HTTPS forwarding needs an authorized
 host route; Tailscale Serve/cert are denied to dev as of initial setup. Do not
 change operator policy or use Funnel. A remote HTTP address cannot enable browser
 microphone recording. Never advertise an unverified HTTPS URL.

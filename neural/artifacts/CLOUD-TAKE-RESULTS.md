@@ -49,3 +49,10 @@ operations are denied to dev. No sudo, firewall, operator-policy, public exposur
 or GCP admin change was made. HTTPS and canonical page publication remain pending
 coordination with root and main app owner Sol 96cbf9fa. Page patch is outside the
 main app at /home/dev/code/neural-harmony-20261115/site-patch/neural-experiment.html.
+
+
+Peer-route correction (2026-11-15): root identified a host self-tailnet connection
+quirk. Independently verified with read-only curl from existing M4 bridge: GET /
+and /health both200, health ready:true. Private HTTP WAV test page is reachable:
+http://jacob-dev-1.tailb2a35c.ts.net:9918/. Do not diagnose firewall from self-curl.
+The inference unit remains enabled per root, separate from browser route A.
