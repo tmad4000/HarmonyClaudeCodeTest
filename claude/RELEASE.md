@@ -1,3 +1,17 @@
+# 2026-11-15-noos-debug-1
+
+Updated 2026-11-15T14:57:09Z.
+
+Beta debug sessions are sent automatically to Ideaflow (Jacob Cole and those working on Harmony with him, including AI assistants) after Sing and the recording notice. Recording turns capture and transfer off in one click; a prior Off stays off. Old local-only sessions are never uploaded.
+
+Per-session Delete and Delete my recordings remove access, with pending state until confirmed cleanup. Inaccessible backup copies may remain longer; no immediate or complete physical deletion is promised. Normal server access expires after30days. Local Export remains available. Personal Saves are separate.
+
+Uses the existing single debug encoder, a durable bounded outbox, immutable write-only chunk retries, device-scoped removal and the accepted Noos .46 backend. The first-run notice fits390px; grouped controls and the notice remain accessible on320px short screens. Canvas-ready recovery, local Tone and the isolated Neural page are preserved.
+
+Validation: independent client security reviews, sandboxed mocked notice/Off/retry/ACK/count/epoch/quota/recovery suites; accepted backend pilot SHA25666f92f8d576ad591912081784d37b5e38956437b79fed0c0e2a89f9952c51e54 and explicit root option(a) GO. Live one-session acceptance follows publication. Physical iPhone and real-room audio quality remain unverified.
+
+---
+
 # 2026-11-15-canvas-ready-1
 
 Updated 2026-11-15T14:12:24Z.
