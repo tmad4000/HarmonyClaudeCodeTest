@@ -23,3 +23,7 @@ Release metadata identifies the artifact build, never an anticipated publication
 
 ## V2 follow-up
 Fable v2 app shell on the already-shipped incremental engine: equal output pills, live actual pitch and target harmonies on the current-key staff, harmony chips, one Sing/Stop action and a native settings sheet. Recording indicator follows actual recorder state; defaultboth selects bothThird chips. Dark/light system themes and reduced-motion rendering are supported. Feedback loads third-party code only after an explicit Send feedback click. Session pruning now occurs at take start/end, not every2second audio chunk. The incrementalv5 remains an additional rollback; originalv4 is retained.
+
+
+## Local Tone follow-up
+Vendor the exact previously loadedTone14.8.49 bytes and licenses; no version upgrade. No CDN request is required on page load. Baseline screenshots are archived in docs/screenshots/2026-11-15 with68 dark/light, phone/desktop, mode and state views. Both themes and the Mix→Speakers settings order were inspected. About now has a small version/build stamp with touch/keyboard exact details; sourcecommit metadata can be supplied in the release manifest. Audio processing unchanged. Real singing on speakers remains unverified until Jacob records a take.

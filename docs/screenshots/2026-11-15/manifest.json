@@ -1,0 +1,485 @@
+{
+  "capturedAt": "2026-11-15T09:52:12.062Z",
+  "url": "https://harmony.jacobcole.net/",
+  "sourceVersion": "2026-11-15-harmony-v2-1",
+  "syntheticTone": true,
+  "sandbox": true,
+  "entries": [
+    {
+      "name": "dark-phone-first-run-idle.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "first-run-idle",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-unison.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-unison",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-thirds.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-thirds",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-fifths.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-fifths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-sixths.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-sixths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-octaves.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-octaves",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-power.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-power",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-choir.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-choir",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-barbershop.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-barbershop",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-gospel.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-gospel",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-jazz.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-jazz",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-ethereal.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-ethereal",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-singing-close.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "singing-close",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-gear-sheet.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "gear-sheet",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-headphones.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "headphones",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-speakers.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "speakers",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-phone-idle-after-take.png",
+      "theme": "dark",
+      "size": "phone",
+      "scene": "idle-after-take",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-first-run-idle.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "first-run-idle",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-unison.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-unison",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-thirds.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-thirds",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-fifths.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-fifths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-sixths.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-sixths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-octaves.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-octaves",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-power.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-power",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-choir.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-choir",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-barbershop.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-barbershop",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-gospel.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-gospel",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-jazz.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-jazz",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-ethereal.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-ethereal",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-singing-close.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "singing-close",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-gear-sheet.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "gear-sheet",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-headphones.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "headphones",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-speakers.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "speakers",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "dark-desktop-idle-after-take.png",
+      "theme": "dark",
+      "size": "desktop",
+      "scene": "idle-after-take",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-first-run-idle.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "first-run-idle",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-unison.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-unison",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-thirds.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-thirds",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-fifths.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-fifths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-sixths.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-sixths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-octaves.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-octaves",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-power.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-power",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-choir.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-choir",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-barbershop.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-barbershop",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-gospel.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-gospel",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-jazz.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-jazz",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-ethereal.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-ethereal",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-singing-close.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "singing-close",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-gear-sheet.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "gear-sheet",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-headphones.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "headphones",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-speakers.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "speakers",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-phone-idle-after-take.png",
+      "theme": "light",
+      "size": "phone",
+      "scene": "idle-after-take",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-first-run-idle.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "first-run-idle",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-unison.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-unison",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-thirds.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-thirds",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-fifths.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-fifths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-sixths.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-sixths",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-octaves.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-octaves",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-power.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-power",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-choir.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-choir",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-barbershop.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-barbershop",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-gospel.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-gospel",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-jazz.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-jazz",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-ethereal.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-ethereal",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-singing-close.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "singing-close",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-gear-sheet.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "gear-sheet",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-headphones.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "headphones",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-speakers.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "speakers",
+      "version": "2026-11-15-harmony-v2-1"
+    },
+    {
+      "name": "light-desktop-idle-after-take.png",
+      "theme": "light",
+      "size": "desktop",
+      "scene": "idle-after-take",
+      "version": "2026-11-15-harmony-v2-1"
+    }
+  ]
+}
