@@ -7,17 +7,17 @@ import WebKit
 class HarmonyViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(HarmonyAudioSession())
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--harmony-smoke"), let content = webView?.configuration.userContentController {
+            content.add(self, name: "harmonySmoke")
+            content.addUserScript(WKUserScript(source: Self.smokeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        #endif
     }
     override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
         let config = super.webViewConfiguration(for: instanceConfiguration)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--harmony-smoke") {
-            config.userContentController.add(self, name: "harmonySmoke")
-            config.userContentController.addUserScript(WKUserScript(source: Self.smokeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
-        #endif
         return config
     }
 }

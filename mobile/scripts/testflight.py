@@ -42,6 +42,8 @@ def main():
     if not re.fullmatch('[0-9a-f]{40}',args.source) or not re.fullmatch('[0-9]+',args.build):parser.error('Full source SHA and numeric build required')
     root=Path(__file__).resolve().parents[1];os.chdir(root)
     process_env=child_env()
+    # Apple rsync must find its own server, never Homebrew's incompatible binary.
+    process_env['PATH']='/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/Users/jacobcole/.local/bin'
     if subprocess.check_output(['uname','-s'],text=True).strip()!='Darwin':raise RuntimeError('Apple host required')
     if subprocess.check_output(['launchctl','managername'],text=True).strip()!='Aqua':raise RuntimeError('Task-owned gui/501 Aqua job required')
     owner=json.loads((Path.home()/'.local/state/ios-build-slot.lock.d/owner.json').read_text())

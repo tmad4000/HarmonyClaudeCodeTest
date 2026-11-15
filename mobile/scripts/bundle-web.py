@@ -7,6 +7,8 @@ src=root.parent/'claude'; out=root/'www'
 if out.exists(): shutil.rmtree(out)
 shutil.copytree(src,out,ignore=shutil.ignore_patterns('test','*.py','__pycache__','*.md'))
 index=(out/'index.html').read_text()
+index=index.replace('width=device-width, initial-scale=1.0', 'width=device-width, initial-scale=1.0, viewport-fit=cover')
+index=index.replace('</head>', '<style>.harmony-app{padding-top:env(safe-area-inset-top);box-sizing:border-box}</style></head>')
 index=index.replace('<script defer src="harmony-wit-feedback.js"', '<script src="native-bridge.js"></script>\n    <script defer src="harmony-wit-feedback.js"')
 index=index.replace('<script src="update-guard.js"></script>', '')
 (out/'index.html').write_text(index)
