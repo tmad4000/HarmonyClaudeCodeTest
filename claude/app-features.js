@@ -1,7 +1,7 @@
 /* Keep version.json and this identifier in sync whenever the site is released. */
 (() => {
-    const VERSION = '2026-11-14-build-time-1';
-    const BUILD_TIME = '2026-11-14T09:02:57.182Z';
+    const VERSION = '2026-11-15-speaker-debug-1';
+    const BUILD_TIME = '2026-11-15T09:06:18.393Z';
     const KEY = 'harmony-singer-settings-v1';
     const params = new URLSearchParams(location.search);
     const selects = { keyRoot: 'key', engineSelect: 'engine', backingSelect: 'backing', backingStyleSelect: 'backingStyle', recordMode: 'recordmode' };
@@ -9,7 +9,7 @@
     const groups = { mode: 'mode', scale: 'scale', position: null };
     function read() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) { return {}; } }
     function save() {
-        const state = { selects: {}, sliders: {}, groups: {}, voices: {}, speaker: document.getElementById('speakerModeToggle').classList.contains('on') };
+        const state = { extraProtection: !!document.getElementById('extraProtection')?.checked, outputProtection: Number(document.getElementById('outputPosition')?.value || 0), selects: {}, sliders: {}, groups: {}, voices: {}, speaker: document.getElementById('speakerModeToggle').classList.contains('on') };
         for (const id of Object.keys(selects)) state.selects[id] = document.getElementById(id).value;
         for (const id of sliders) state.sliders[id] = document.getElementById(id).value;
         for (const group of Object.keys(groups)) state.groups[group] = document.querySelector(`[data-${group}].active`)?.dataset[group];
@@ -32,10 +32,13 @@
             document.querySelectorAll(`[data-${group}]`).forEach(el => { if (el.dataset[group] === value && !el.classList.contains('active')) el.click(); });
         }
         document.querySelectorAll('.toggle[data-voice]').forEach(el => { const value = state.voices?.[el.dataset.voice]; if (typeof value === 'boolean' && value !== el.classList.contains('on')) el.click(); });
+        const extra=document.getElementById('extraProtection');
+        if(extra&&typeof state.extraProtection==='boolean'){extra.checked=state.extraProtection;extra.dispatchEvent(new Event('change',{bubbles:true}));}
         const speaker = document.getElementById('speakerModeToggle');
-        if (!params.has('speaker') && typeof state.speaker === 'boolean' && state.speaker !== speaker.classList.contains('on')) speaker.click();
-        document.addEventListener('input', e => { if (sliders.includes(e.target.id)) save(); });
-        document.addEventListener('change', e => { if (Object.hasOwn(selects, e.target.id)) save(); });
+        if (!params.has('speaker') && [0,1].includes(state.outputProtection)) window.harmonySinger.setOutputPosition(state.outputProtection);
+        else if (!params.has('speaker') && typeof state.speaker === 'boolean' && state.speaker !== speaker.classList.contains('on')) speaker.click();
+        document.addEventListener('input', e => { if (sliders.includes(e.target.id) || e.target.id==='outputPosition') save(); });
+        document.addEventListener('change', e => { if (Object.hasOwn(selects, e.target.id) || ['outputPosition','extraProtection'].includes(e.target.id)) save(); });
         document.addEventListener('click', e => { if (e.target.closest('[data-mode], [data-scale], [data-position], .toggle[data-voice], #speakerModeToggle')) save(); });
     }
     async function checkUpdate() {
@@ -45,7 +48,8 @@
             const latest = await response.json();
             if (typeof latest.version === 'string' && latest.version !== VERSION) {
                 document.getElementById('releaseStatus').textContent = 'A new version is available';
-                document.getElementById('refreshVersion').textContent = 'Refresh to update';
+                document.getElementById('refreshVersion').textContent = 'Update · reload';
+                document.getElementById('refreshVersion').hidden = false;
             }
         } catch (_) { /* Continue working offline or when the check is unavailable. */ }
     }
@@ -60,6 +64,7 @@
     window.addEventListener('DOMContentLoaded', () => {
         restore();
         document.getElementById('refreshVersion').addEventListener('click', () => location.reload());
+        document.getElementById('checkVersion')?.addEventListener('click',checkUpdate);
         renderBuildTime();
         checkUpdate();
         let timer = null;

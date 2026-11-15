@@ -7,6 +7,7 @@
     <meta name="description" content="Harmony Singer listens to your voice and sings in-key harmonies back in real time, on headphones or out loud on speakers.">
     <meta property="og:title" content="Harmony Singer — sing a melody, hear live harmonies">
     <meta property="og:description" content="Real-time, in-key backup harmonies from your own voice. Works on headphones or speakers.">
+    <meta name="harmony-version" content="2026-11-15-speaker-debug-1">
     <meta name="color-scheme" content="dark">
     <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
     <script src="vendor/SignalsmithStretch.js"></script>
@@ -43,7 +44,15 @@
 
         .container { max-width: 720px; margin: 0 auto; padding: 40px 20px 56px; }
 
-        header { margin-bottom: 24px; }
+        header { margin-bottom: 24px; position: relative; padding-top: 34px; }
+        .release-info { position: absolute; right: 0; top: 0; display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--muted); }
+        .release-info details { position: relative; }
+        @media(max-width:550px){header{padding-top:64px}.release-info{max-width:100%;row-gap:4px}}
+        .build-popover { position: absolute; top: 100%; right: 0; min-width: 230px; background: var(--surface); padding: 8px; z-index: 2; }
+        #refreshVersion { font: inherit; }
+        #debugSessions { font-size: 13px; }
+        #debugSessions button { margin: 4px; padding: 4px 8px; }
+
         h1 { font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; }
         .subtitle { color: var(--muted); margin-top: 2px; }
 
@@ -69,6 +78,10 @@
         /* ---- focus: one visible ring everywhere */
         :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 
+        .output-slider { display:flex; align-items:center; gap:12px; max-width:260px; }
+        .output-slider input { flex:1; min-width:0; accent-color:var(--accent); }
+        .output-slider button { background:none; border:0; color:var(--text); cursor:pointer; padding:8px; min-height:40px; min-width:40px; }
+        .output-slider svg { width:24px; height:24px; }
         /* ---- start panel */
         fieldset { border: 0; min-width: 0; }
         legend { font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; padding: 0; }
@@ -210,29 +223,35 @@
             .select-row { grid-template-columns: 1fr; gap: 4px; }
         }
     </style>
+<link rel="stylesheet" href="harmony-ui.css">
 </head>
 <body>
     <div class="container">
         <header>
+            <div class="release-info"><span data-status role="status"></span><details><summary><time id="buildTime">Build time unavailable</time></summary><div class="build-popover"><span id="buildDetail"></span><br><span>Version 2026-11-15-speaker-debug-1</span><br><button type="button" id="checkVersion">Check for update</button></div></details><span id="releaseStatus" aria-live="polite"></span> <button id="refreshVersion" type="button" hidden>Refresh app</button></div>
             <h1>Harmony Singer</h1>
             <p class="subtitle">Sing a melody. Hear in-key harmonies sung back with your own voice, live.</p>
         </header>
 
         <main>
+            <aside id="debugSessions" class="card" aria-label="Debug sessions">
+                <label><input type="checkbox" checked> Record debug sessions on this device</label>
+                <p class="hint">Starting saves microphone and harmony audio plus diagnostic events on this browser only. No uploads. Turn off before starting to skip recording. Unkept takes expire after 14 days when this app opens; maximum 100 MB unkept, 10 minutes of audio per session. Kept takes are never automatically deleted. Anyone using this browser profile can review its recordings.</p>
+
+                <button type="button" data-mark>Mark problem (M)</button> <button type="button" data-skip>Start without recording</button> <button type="button" data-review>Saved sessions on this device</button><div data-sessions></div>
+            </aside>
             <section class="card" aria-label="Start">
                 <fieldset>
                     <legend>Listening on</legend>
-                    <div class="segmented" id="speakerModeToggle" aria-describedby="speakerModeStatus">
-                        <label class="segment">
-                            <input type="radio" name="outputMode" value="headphones" checked>
-                            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14" width="4.5" height="7" rx="1.5"/><rect x="17" y="14" width="4.5" height="7" rx="1.5"/></svg>Headphones</span>
-                        </label>
-                        <label class="segment">
-                            <input type="radio" name="outputMode" value="speakers">
-                            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3l5-4v13l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg>Speakers</span>
-                        </label>
+                    <div id="speakerModeToggle" class="output-slider">
+                        <button type="button" data-output-position="0" aria-label="Headphones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2" y="14" width="5" height="7" rx="1"/><rect x="17" y="14" width="5" height="7" rx="1"/></svg></button>
+                        <input id="outputPosition" type="range" min="0" max="1" step="1" value="0" aria-label="Listening setup" aria-valuetext="Headphones" aria-describedby="outputProfileLabel speakerModeStatus">
+                        <button type="button" data-output-position="1" aria-label="Speakers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h3l5-4v14l-5-4H4zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/></svg></button>
                     </div>
+                    <p id="outputProfileLabel" aria-live="polite">Headphones</p>
+                    <p class="hint">Speakers removes echo while keeping harmonies at full level. This changes processing; choose your physical output in your device settings.</p>
                     <p id="speakerModeStatus" class="hint" aria-live="polite"></p>
+                    <button id="protectionHint" type="button" hidden>Speaker pickup is strong · enable extra feedback protection</button>
                     <p id="speakerCheckStatus" class="hint" aria-live="polite"></p>
                 </fieldset>
 
@@ -399,6 +418,7 @@
                                 <option value="none">None: quieter harmonies and feedback guard only</option>
                             </select>
                         </div>
+                        <label class="check-row"><input type="checkbox" id="extraProtection"> Extra feedback protection (loud rooms)</label>
                         <label class="check-row" for="speakerCheckToggle">
                             <input type="checkbox" id="speakerCheckToggle" checked>
                             <span>Run a one-second speaker check when starting on speakers (a soft “shh” that measures the room)</span>
@@ -470,7 +490,7 @@
         </main>
 
         <footer>
-            <div class="release-info"><details><summary><time id="buildTime">Build time unavailable</time></summary><span id="buildDetail"></span></details><span id="releaseStatus" aria-live="polite"></span> <button id="refreshVersion" type="button">Refresh app</button></div>
+
             <p><a href="neural-experiment.html">Explore the neural harmony experiment →</a></p>
         </footer>
     </div>
@@ -478,5 +498,10 @@
     <script src="harmony-app.js"></script>
     <script src="release-time.js"></script>
     <script src="app-features.js"></script>
+    <script src="private-session-store.js"></script>
+    <script src="session-metrics.js"></script>
+    <script src="debug-sessions.js"></script>
+    <script src="harmony-ui.js"></script>
+    <script defer src="harmony-wit-feedback.js" data-app-version="2026-11-15-speaker-debug-1"></script>
 </body>
 </html>

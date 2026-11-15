@@ -595,6 +595,8 @@
      */
     class SpeakerLoopControl {
         constructor(o = {}) {
+            this.mode = o.mode || 'protected';
+            this.backoffDb = o.backoffDb ?? 30;
             this.holdMs = o.holdMs ?? 600;          // keep harmonies through short gaps (consonants, breaths)
             this.nearMargin = o.nearMargin ?? 2;    // singer must be this many times the residual echo power
             this.trimHigh = o.trimHigh ?? 0.25;     // residual/singer power above which we back off
@@ -618,7 +620,7 @@
             this.nearOk = true;
             this.hotMs = 0;
             this.emergencies = 0;
-            this.bound = 1;
+            this.bound = 1; this.applied=1; this.emergencyUntil=0; this.emergencyActive=false;
         }
 
         /** Tell the controller what the speaker check measured (power gain, e.g. 10^(dB/10)). */
@@ -654,7 +656,7 @@
                 if (s.voiced && nearOk) this.nearRef = Math.max(st.outPow, this.nearRef * Math.exp(-dt / 2));
                 const singerStillThere = s.voiced && st.outPow > 0.3 * this.nearRef && this.nearRef > 0;
                 if (this.gateOpen && singerStillThere && this.residualRatio > this.trimHigh) {
-                    this.trim *= Math.pow(10, -30 * dt / 20);            // back off 30 dB/s
+                    this.trim *= Math.pow(10, -this.backoffDb * dt / 20);            // configurable backoff rate
                 } else if (this.gateOpen && nearOk && this.residualRatio < this.trimLow) {
                     this.trim *= Math.pow(10, 4 * dt / 20);              // recover 4 dB/s
                 }
@@ -670,11 +672,22 @@
                 this.bound = Math.min(1, Math.sqrt(this.trimHigh / (leak * this.coupling * this.appGain + 1e-12)));
                 // Last line of defence: nobody sings so loudly that the speaker feed sits at the limiter.
                 this.hotMs = st.refPow > this.hotPow ? this.hotMs + dt * 1000 : 0;
-                if (this.hotMs > 300) { this.trim *= 0.5; this.hotMs = 0; this.emergencies++; }
+                if (this.hotMs > 300) { this.trim *= 0.5; this.hotMs = 0; this.emergencies++; this.emergencyUntil=now+4000; }
             }
             this.trim = Math.min(1, Math.max(this.minTrim, this.trim));
             if (!st) { this.trim = 1; this.bound = 1; }
-            const applied = Math.max(this.minTrim, Math.min(this.trim, this.bound));
+            let applied = Math.max(this.minTrim, Math.min(this.trim, this.bound));
+            if (this.mode === 'speakers') {
+                const leak=st&&st.adapted&&!st.suspect?Math.max(st.leak,this.leakFloor):1;
+                const loopPower=st?leak*this.coupling*this.appGain:0;
+                if(loopPower>0.5)this.emergencyActive=true;
+                else if(loopPower<0.25)this.emergencyActive=false;
+                const target=this.emergencyActive?Math.max(0.5,Math.min(1,Math.sqrt(0.5/Math.max(loopPower,1e-12)))):1;
+                const wanted=now<this.emergencyUntil?Math.min(target,0.5):target;
+                // Emergency attenuation is bounded at6dB and expires. Recovery takes about1.5s.
+                applied=wanted<this.applied?wanted:Math.min(wanted,this.applied*Math.pow(10,4*dt/20));
+            }
+            this.applied=applied;
             this.nearOk = nearOk;
             if (s.voiced && nearOk) this.lastNearAt = now;
             this.gateOpen = now - this.lastNearAt < this.holdMs;
@@ -698,7 +711,8 @@
                 this.zero = new Float32Array(this.N);
                 this.fifoMic = new Float32Array(this.N); this.fifoRef = new Float32Array(this.N); this.fifoOut = new Float32Array(this.N);
                 this.fifoFill = 0;
-                this.statEvery = 8; this.statCount = 0;
+                this.statEvery = Math.max(1, Math.round(sampleRate / this.N / 10)); this.statCount = 0;
+                this.expectedFrame = null; this.renderGaps = 0; this.missingInputBlocks = 0;
                 this.capture = null;
                 this.alive = true;
                 this.port.onmessage = (ev) => this.onMessage(ev.data || {});
@@ -728,6 +742,9 @@
                 const out = outputs[0] && outputs[0][0];
                 if (!out) return this.alive;
                 const n = out.length;
+                if (this.expectedFrame !== null && currentFrame !== this.expectedFrame) this.renderGaps++;
+                this.expectedFrame = currentFrame + n;
+                if (!inputs[0]?.[0]?.length) this.missingInputBlocks++;
                 if (this.capture) {
                     const cap = this.capture, room = cap.mic.length - cap.pos, take = Math.min(room, n);
                     cap.mic.set(mic.subarray ? mic.subarray(0, take) : mic.slice(0, take), cap.pos);
@@ -752,6 +769,10 @@
                     this.statCount = 0;
                     const s = this.core.stats();
                     s.type = 'stats';
+                    s.renderGaps = this.renderGaps; s.missingInputBlocks = this.missingInputBlocks;
+                    s.sampleRate = sampleRate; s.quantum = n;
+                    // Browsers do not expose hardware underruns; gaps are a separate diagnostic.
+                    s.hardwareUnderruns = null;
                     this.port.postMessage(s);
                 }
                 return this.alive;
