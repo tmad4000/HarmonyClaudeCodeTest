@@ -1,3 +1,19 @@
+# 2026-11-15-takes-live-1
+
+Updated 2026-11-15T11:01:05.673Z.
+
+Every song started with Sing is kept locally as a take (2 seconds or longer). Stop offers Play, Download and Keep; Takes opens the local library. No login is needed. AAC/m4a is preferred when supported, otherwise WebM. Takes include voice and harmonies, including the cleaned voice on Speakers, before any output-volume boost. Unkept takes expire after 14 days or 200 MB; kept takes are never automatically deleted. The Settings switch disables automatic takes.
+
+Third above and Third below are independent choices; at least one stays selected. The live Headphones/Speakers control crossfades prebuilt audio paths without restarting the microphone or take. Browser AEC is requested on the same track; if the browser does not apply it the caption says so.
+
+Startup sound was the intentional echo probe: the speaker check is now optional, off by default, with a short Run/Skip prompt and a Settings button. Raw microphone telemetry and the picture now tap before our canceller/gate, with zero-run, track-event and context diagnostics. Updated labels replace Built.
+
+Sandboxed Chromium verified mixed AAC download and decode, same context/input/recorder across output changes, interrupted recovery, pin/delete, encoder-start failure, migration and recording persistence. Synthetic room tests pass at 44.1/48 kHz. Singing on real speakers is unverified until Jacob records a take; Linux does not verify iPhone Safari. Public debug upload and the public privacy update are a separate upcoming release; this version keeps data in the browser.
+
+The World Issue Tracker feedback script loads only after Send feedback is tapped. Tone.js 14.8.49 remains vendored locally.
+
+---
+
 # Speaker/debug release — 2026-11-15
 
 Canonical GitHub source is tmad4000/HarmonyClaudeCodeTest; candidate branch claude/speaker-harmony-overhaul. The separately configured Sites source project appgprj_6af7d8fbba108191a3478ee36e1f9fda publishes claude/ as dist/. Preserve the existing neural experiment, settings restoration, version checks and relative build-time formatter.
