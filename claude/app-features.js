@@ -1,7 +1,7 @@
 /* Keep version.json and this identifier in sync whenever the site is released. */
 (() => {
-    const VERSION = '2026-11-15-noos-privacy-2';
-    const BUILD_TIME = '2026-11-15T15:07:45Z';
+    const VERSION = '2026-11-15-notice-wrap-1';
+    const BUILD_TIME = '2026-11-15T15:17:39Z';
     const KEY = 'harmony-singer-settings-v1';
     const params = new URLSearchParams(location.search);
     const selects = { keyRoot: 'key', engineSelect: 'engine', backingSelect: 'backing', backingStyleSelect: 'backingStyle', recordMode: 'recordmode' };

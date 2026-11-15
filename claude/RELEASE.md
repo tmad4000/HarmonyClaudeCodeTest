@@ -1,3 +1,7 @@
+## 2026-11-15-notice-wrap-1
+
+The beta recording notice keeps its separator with Turn off and Privacy on narrow phones. The approved notice wording and recording behavior are unchanged.
+
 # 2026-11-15-noos-privacy-2
 
 Updated 2026-11-15T15:07:45Z.
