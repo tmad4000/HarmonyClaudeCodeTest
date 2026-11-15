@@ -1,3 +1,9 @@
+# WITHDRAWN — ROOT SELECTED ROUTE B
+
+Browser inference/model distribution is explicitly out. This directory retains
+historical research/tests only. Do not publish model shards or browser assets.
+Current draft contract is at /home/dev/code/neural-harmony-20261115/route-b/CONTRACT-DRAFT.md.
+
 # Browser-only offline Neural Harmony (route A)
 
 Record 10 seconds on the public HTTPS Harmony page, then generate a neural third
