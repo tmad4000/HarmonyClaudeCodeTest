@@ -1,3 +1,13 @@
+# 2026-11-15-noos-privacy-2
+
+Updated 2026-11-15T15:07:45Z.
+
+The runtime Recording Details text now states that30days is an access limit and that inaccessible backup copies may persist longer with no known cleanup bound. Removing ends access right away. The first-run notice is unchanged.
+
+This is a privacy-copy hotfix; upload, removal, recording and audio behavior are unchanged.
+
+---
+
 # 2026-11-15-noos-debug-1
 
 Updated 2026-11-15T14:57:09Z.
