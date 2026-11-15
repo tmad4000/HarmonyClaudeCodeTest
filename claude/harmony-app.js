@@ -608,7 +608,7 @@ class HarmonySinger {
         const outputSlider = document.getElementById('outputPosition');
         if (outputSlider) outputSlider.addEventListener('input', e => this.setOutputPosition(Number(e.target.value)));
         document.querySelectorAll('[data-output-position]').forEach(b => b.addEventListener('click', () => this.setOutputPosition(Number(b.dataset.outputPosition))));
-        if(speakerGroup)speakerGroup.addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();this.toggleSpeakerMode();document.getElementById('outputPosition').dispatchEvent(new Event('change',{bubbles:true}));}});
+        if(speakerGroup)speakerGroup.addEventListener('keydown',e=>{if(e.target===speakerGroup&&(e.key===' '||e.key==='Enter')){e.preventDefault();this.toggleSpeakerMode();document.getElementById('outputPosition').dispatchEvent(new Event('change',{bubbles:true}));}});
         if (speakerGroup) speakerGroup.addEventListener('click', e => { if(e.target===speakerGroup && (!e.isTrusted || outputSlider?.type==='hidden')) this.toggleSpeakerMode(); });
         const echoSelect = document.getElementById('echoModeSelect');
         if (echoSelect) {

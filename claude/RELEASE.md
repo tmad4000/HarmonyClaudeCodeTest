@@ -19,3 +19,7 @@ Validation: node claude/test/speaker-regression.cjs runs44.1/48kHz × room gains
 Known scope limits: no automatic private upload, no20second PCM snapshot ring (a large copy on the audio thread could introduce stalls), no claim of exact hardware underruns or measured output route where the browser does not expose it. Reverb-tail auto-sizing and exhaustive5minute/M5p99 performance remain follow-up measurements. Only the verified context sample rate is used; WebAudio handles capture resampling.
 
 Release metadata identifies the artifact build, never an anticipated publication time. Before packaging, set a unique version and UTC buildTime in version.json, app-features.js and the version meta tag. Keep source/artifact immutable after saving. Publish only after independent code and design review; verify the live manifest, key assets and browser behavior afterwards.
+
+
+## V2 follow-up
+Fable v2 app shell on the already-shipped incremental engine: equal output pills, live actual pitch and target harmonies on the current-key staff, harmony chips, one Sing/Stop action and a native settings sheet. Recording indicator follows actual recorder state; defaultboth selects bothThird chips. Dark/light system themes and reduced-motion rendering are supported. Feedback loads third-party code only after an explicit Send feedback click. Session pruning now occurs at take start/end, not every2second audio chunk. The incrementalv5 remains an additional rollback; originalv4 is retained.
