@@ -321,6 +321,8 @@ class HarmonySinger {
         this.detectedKey = null;
         this.harmonyVolume = 0.7;
         this.dryVolume = 0.8;
+        this.outputVolume=100;this.hearMyVoice=true;this.useBluetoothMic=false;this.balance=50;this.monitorChoiceSaved=false;
+        try{const v=JSON.parse(localStorage.getItem('harmony-output-volume-v1')||'{}');if(Number.isFinite(v.volume))this.outputVolume=Math.max(0,Math.min(220,v.volume));if(typeof v.hearMyVoice==='boolean'){this.hearMyVoice=v.hearMyVoice;this.monitorChoiceSaved=true;}this.useBluetoothMic=v.useBluetoothMic===true;if(Number.isFinite(v.balance))this.balance=Math.max(0,Math.min(100,v.balance));}catch(_){}
         this.reverbAmount = 0.3;
         this.chorusAmount = 0.3;
         this.smoothing = 0.5;
@@ -1163,8 +1165,10 @@ class HarmonySinger {
                 // attenuates the mic (measured on the M5: fine with a test tone, damped with real
                 // singing). The canceller and headphone paths take the microphone untouched.
                 // Auto gain control is always off: it lifted the mic floor by ~11 dB (test/aec_realistic.py).
+                const devices=await navigator.mediaDevices.enumerateDevices();checkStart();const inputs=devices.filter(d=>d.kind==='audioinput'),bt=/bluetooth|airpod|hands.free|headset/i,preferred=this.useBluetoothMic?inputs.find(d=>bt.test(d.label)):inputs.find(d=>/built.in|internal|macbook|iphone|pixel/i.test(d.label)&&!bt.test(d.label));
                 const browserEc = this.speakerMode && this.echoMode === 'browser';
                 const audioConstraints = {
+                    ...(preferred&&preferred.deviceId?{deviceId:{ideal:preferred.deviceId}}:{}),
                     echoCancellation: browserEc,
                     noiseSuppression: false,
                     autoGainControl: false,
@@ -1176,7 +1180,7 @@ class HarmonySinger {
                 }else {const acquired=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});if(generation!==this.startGeneration){acquired.getTracks().forEach(t=>t.stop());checkStart();}this.mediaStream=acquired;}
                 checkStart();
                 const track = this.mediaStream.getAudioTracks()[0];
-                const settings = track.getSettings();
+                const settings = track.getSettings();this.bluetoothInput=/bluetooth|airpod|hands.free|headset/i.test(track.label);if(this.bluetoothInput&&!this.monitorChoiceSaved)this.hearMyVoice=false;
                 for(const type of ['mute','unmute','ended'])track.addEventListener(type,()=>this.logEvent('track-'+type,{readyState:track.readyState,muted:track.muted,contextState:ctx.state}));
                 console.log('Actual audio settings:', settings);
                 this.logEvent('start', { input: 'microphone', requested: audioConstraints, actual: settings, label: track.label, engine: this.engine, speakerMode: this.speakerMode, echoMode: this.speakerMode ? this.echoMode : null, sampleRate: ctx.sampleRate,
@@ -1190,7 +1194,7 @@ class HarmonySinger {
                 this.micSource = ctx.createMediaStreamSource(this.mediaStream);
             }
 
-            this.outputLabel=await this.readOutputLabel();checkStart();
+            this.outputLabel=await this.readOutputLabel();checkStart();if(!this.monitorChoiceSaved&&/airpod|bluetooth/i.test(this.outputLabel))this.hearMyVoice=false;
             this.logEvent('output-route',{label:this.outputLabel,source:'Browser default description; physical route not guaranteed'});
             if(this.outputDefaultPending&&/headphone|airpod|bud|earphone/i.test(this.outputLabel)){
                 this.speakerMode=false;this.outputPosition=0;this.renderSpeakerMode();
@@ -1293,7 +1297,7 @@ class HarmonySinger {
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
             await this.reverb.ready;checkStart(); // Constructor already generates the impulse response.
             this.masterGain = new Tone.Gain(1);
-            this.limiter = new Tone.Limiter(-3);
+            this.limiter = new Tone.Gain(1);this.outputProcessor=new HarmonyOutput.OutputVolume(ctx);
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
             this.gateGain = new Tone.Gain(1);
             this.trimGain = new Tone.Gain(1);
@@ -1321,9 +1325,9 @@ class HarmonySinger {
             this.reverb.connect(this.masterGain);
             this.monoNode=ctx.createGain();this.monoNode.channelCount=1;this.monoNode.channelCountMode='explicit';this.monoNode.channelInterpretation='speakers';
             this.stereoRouteGain=ctx.createGain();this.monoRouteGain=ctx.createGain();this.stereoRouteGain.gain.value=this.speakerMode?0:1;this.monoRouteGain.gain.value=this.speakerMode?1:0;
-            Tone.connect(this.masterGain,this.stereoRouteGain);Tone.connect(this.stereoRouteGain,this.limiter);
-            Tone.connect(this.masterGain,this.monoNode);this.monoNode.connect(this.monoRouteGain);Tone.connect(this.monoRouteGain,this.limiter);
-            this.limiter.toDestination();
+            Tone.connect(this.masterGain,this.stereoRouteGain);Tone.connect(this.stereoRouteGain,this.outputProcessor.input);
+            Tone.connect(this.masterGain,this.monoNode);this.monoNode.connect(this.monoRouteGain);Tone.connect(this.monoRouteGain,this.outputProcessor.input);
+            Tone.connect(this.outputProcessor.output,this.limiter);this.updateOutputLevel();this.limiter.toDestination();
             this.outTap = ctx.createAnalyser();
             this.outTap.fftSize = 4096;
             Tone.connect(this.limiter, this.outTap);
@@ -1632,8 +1636,23 @@ class HarmonySinger {
         await this.createPitchShifters();
     }
 
+    saveVolumeSettings(){try{localStorage.setItem('harmony-output-volume-v1',JSON.stringify({volume:this.outputVolume,hearMyVoice:this.monitorChoiceSaved?this.hearMyVoice:undefined,useBluetoothMic:this.useBluetoothMic,balance:this.balance}));}catch(_){}this.logEvent('output-settings',{volume:this.outputVolume,hearMyVoice:this.monitorChoiceSaved?this.hearMyVoice:undefined,useBluetoothMic:this.useBluetoothMic,balance:this.balance});}
+    updateOutputLevel(now=performance.now()){
+        if(!this.outputProcessor)return;
+        const requested=HarmonyOutput.gainForPosition(this.outputVolume),current=this.outputAppliedGain||1,c=this.loopControl,st=this.aecStats;
+        let allowed=requested;
+        if(this.speakerMode&&requested>1){
+            if(!this.usingCanceller())allowed=1;
+            else if(c?.couplingKnown&&st){const leak=st.adapted&&!st.suspect?Math.max(st.leak,c.leakFloor):1,loop=leak*c.coupling*c.appGain,target=this.extraProtection?.1:.5;if(loop>target)allowed=Math.min(allowed,Math.max(1,current*Math.sqrt(target/loop)));}
+        }
+        const dt=Math.min(.25,Math.max(0,(now-(this.lastOutputUpdate||now))/1000));this.lastOutputUpdate=now;
+        this.outputAppliedGain=allowed<current?allowed:Math.min(allowed,current*Math.pow(10,3*dt/20));if(!this.speakerMode||requested<=1)this.outputAppliedGain=requested;
+        this.outputHeld=this.outputAppliedGain<requested*.98;this.outputProcessor.set(this.outputAppliedGain);
+    }
     updateGains() {
-        if (this.dryGain) this.dryGain.gain.rampTo(this.speakerMode ? 0 : this.dryVolume,.04);
+        this.updateOutputLevel();
+        if (this.dryGain) this.dryGain.gain.rampTo(this.speakerMode||!this.hearMyVoice ? 0 : this.dryVolume*Math.min(1,2*(100-this.balance)/100),.04);
+        const mixHarmony=Math.min(1,2*this.balance/100);
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
         // Without the canceller, speaker mode needs a fixed cut for gain-before-feedback. With it, level is
         // only held back when the measured loop needs it (speakerTrim, applied on trimGain).
@@ -1651,7 +1670,7 @@ class HarmonySinger {
                 if (this.harmonyPosition === 'below' && key === 'upper') play = false;
                 level = play ? this.harmonyVolume * 0.6 : 0;
             }
-            this.gains[key].gain.value = level * cap * duck * voiceOn;
+            this.gains[key].gain.rampTo(level * mixHarmony * cap * duck * voiceOn,.03);
         });
     }
 
@@ -1749,7 +1768,7 @@ class HarmonySinger {
         [this.mic, this.gateGain, this.trimGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
             .forEach(n => { if (n) { try { n.dispose(); } catch (e) { /* ignore */ } } });
         this.mic = null; this.gateGain = null; this.trimGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
-        this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
+        this.outputProcessor?.dispose();this.outputProcessor=null;this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
         this.smoothedPitch = null;
         this.stableMidi = null;
         this.guardCandidates = [];
@@ -1867,12 +1886,13 @@ class HarmonySinger {
                 if (this.duckUntil && now > this.duckUntil) { this.duckUntil = 0; this.updateGains(); }
             }
 
+            this.updateOutputLevel(now);
             // Periodic stats for the debug log (2 Hz).
             if (now - this.lastStatLog > 500) {
                 this.lastStatLog = now;
                 this.logEvent('stats', {
                     rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
-                    rawInputRms:this.rawInputRms,rawInput:this.rawStats,gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
+                    outputVolume:{requested:this.outputVolume,appliedGain:this.outputAppliedGain,held:this.outputHeld,...this.outputProcessor?.metrics()},rawInputRms:this.rawInputRms,rawInput:this.rawStats,gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
                     peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)]),
                     ...(loop && this.aecStats ? { aec: {
                         adapted: this.aecStats.adapted, leak: +this.aecStats.leak.toFixed(3), micDb: Math.round(this.aecStats.micDb), outDb: Math.round(this.aecStats.outDb),
