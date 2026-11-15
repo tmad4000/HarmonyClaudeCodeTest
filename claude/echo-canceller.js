@@ -170,7 +170,7 @@
             for (let j = 0; j < M; j++) this.prop[j] = 0.8 * this.prop[j] / sum;
             this.memX = 0; this.memD = 0; this.memE = 0;
             this.notchMem0 = 0; this.notchMem1 = 0;
-            this.adapted = false; this.sumAdapt = 0; this.saturated = 0; this.screwedUp = 0;
+            this.adapted = false; this.sumAdapt = 0; this.saturated = 0; this.screwedUp = 0; this.activeFrames = 0;
             this.cancelCount = 0;
             this.worseFrames = 0; this.sffS = 0; this.sddS = 0; this.syyS = 0;
             this.Pey = 1; this.Pyy = 1; this.leak = 0;
@@ -184,7 +184,7 @@
         relearn() {
             this.Wre.fill(0); this.Wim.fill(0); this.Fre.fill(0); this.Fim.fill(0);
             this.Ere.fill(0); this.Eim.fill(0); this.Eh.fill(0); this.Yh.fill(0);
-            this.adapted = false; this.sumAdapt = 0; this.screwedUp = 0;
+            this.adapted = false; this.sumAdapt = 0; this.screwedUp = 0; this.activeFrames = 0;
             this.Pey = 1; this.Pyy = 1; this.leak = 0;
             this.Davg1 = 0; this.Davg2 = 0; this.Dvar1 = 0; this.Dvar2 = 0;
             this.worseFrames = 0; this.sffS = 0; this.sddS = 0; this.syyS = 0;
@@ -417,6 +417,10 @@
             if (RER < lower) RER = lower;
             if (RER > this.muMax) RER = this.muMax;
             if (!this.adapted && this.sumAdapt > M && this.leak * Syy > 0.03 * Syy) this.adapted = true;
+            // speexdsp assumes the far end is alone for a moment after start. A singer may never give us
+            // that: with the near end louder than the echo the bootstrap rate stays tiny and "adapted"
+            // would never come. After ~1 s of playback, hand over to the double-talk-robust rate anyway.
+            if (!this.adapted && this.activeFrames > 8 * M && this.sumAdapt > 1) this.adapted = true;
             if (this.adapted) {
                 for (let k = 0; k < K; k++) {
                     let r = this.leak * wtmp[k];
@@ -427,7 +431,9 @@
                 }
             } else {
                 let adaptRate = 0;
-                if (Sxx > N * 1000) {
+                // (speexdsp: N * 1000, sized for 16-bit capture noise; float capture can learn from quieter playback)
+                if (Sxx > N * 30) {
+                    this.activeFrames++;
                     tmp = 0.25 * Sxx;
                     if (tmp > 0.25 * See) tmp = 0.25 * See;
                     adaptRate = tmp / See;
@@ -592,7 +598,7 @@
             this.holdMs = o.holdMs ?? 600;          // keep harmonies through short gaps (consonants, breaths)
             this.nearMargin = o.nearMargin ?? 2;    // singer must be this many times the residual echo power
             this.trimHigh = o.trimHigh ?? 0.25;     // residual/singer power above which we back off
-            this.trimLow = o.trimLow ?? 0.06;       // ... and below which we give level back
+            this.trimLow = o.trimLow ?? 0.17;       // ... and below which we give level back
             this.leakFloor = o.leakFloor ?? 0.02;   // never believe the canceller is better than -17 dB
             this.minTrim = o.minTrim ?? 0.08;
             this.hotPow = o.hotPow ?? 0.126;        // speaker feed above -9 dBFS RMS for a while = something is wrong

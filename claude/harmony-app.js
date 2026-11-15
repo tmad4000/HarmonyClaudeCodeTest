@@ -1064,6 +1064,10 @@ class HarmonySinger {
                 this.testOsc = osc;
                 this.testGain = g;
                 this.testGainBase = g.gain.value;
+                if (this.params.get('level') !== null) g.gain.value = this.testGainBase * parseFloat(this.params.get('level'));
+                this.nearTap = ctx.createAnalyser();      // the clean test singer, before any room echo
+                this.nearTap.fftSize = 4096;
+                g.connect(this.nearTap);
                 this.micSource = g;
                 const howlHz = parseFloat(this.params.get('howl') || '0');
                 if (howlHz > 0) {
@@ -1325,49 +1329,74 @@ class HarmonySinger {
      */
     async runSpeakerCheck() {
         const HEC = window.HarmonyEchoCanceller, ctx = this.audioContext, node = this.aecNode, sr = ctx.sampleRate;
-        const result = { ok: false, confident: false, delayMs: null, couplingDb: null, guessMs: Math.round(1000 * (this.aecDelayGuess || 0) / sr) };
-        let src = null;
-        try {
-            const probe = HEC.makeProbe(sr, 1.15, 0.07);
+        const result = { ok: false, confident: false, delayMs: null, couplingDb: null, attempts: 0, guessMs: Math.round(1000 * (this.aecDelayGuess || 0) / sr) };
+        const sources = [];
+        const alive = () => this.isRunning && this.aecNode === node;
+        const playProbe = (seconds) => {
+            const probe = HEC.makeProbe(sr, seconds, 0.07);
             const buf = ctx.createBuffer(1, probe.length, sr);
             buf.copyToChannel(probe, 0);
-            src = ctx.createBufferSource();
+            const src = ctx.createBufferSource();
             src.buffer = buf;
             Tone.connect(src, this.masterGain);
+            sources.push(src);
             const ended = new Promise(res => { src.onended = res; });
-            const capture = this.aecRequest({ type: 'capture', samples: Math.round(sr * 0.6) }, 4000);
             src.start();
+            return Promise.race([ended, new Promise(res => setTimeout(res, seconds * 1000 + 1500))]);
+        };
+        try {
+            // -- first burst: where does it come back, and how loud?
+            result.attempts = 1;
+            const capture = this.aecRequest({ type: 'capture', samples: Math.round(sr * 0.6) }, 4000);
+            const firstDone = playProbe(1.15);
             const cap = await capture;
-            if (!this.isRunning || this.aecNode !== node) return;
+            if (!alive()) return;
             const est = HEC.estimateDelay(cap.mic, cap.ref, Math.round(sr * 0.42));
-            // how loud the burst arrived: mic power over reference power on the overlapping stretch
             let pm = 0, pr = 0;
             const from = Math.round(sr * 0.08), n = cap.mic.length - est.lag;
             for (let i = from; i < n; i++) { const m = cap.mic[i + est.lag], r = cap.ref[i]; pm += m * m; pr += r * r; }
-            const coupling = pr > 0 ? pm / pr : 0;
+            const powerRatio = pr > 0 ? pm / pr : 0;          // includes anything else the mic heard: an upper bound
+            const lagGain = Math.pow(10, est.gainDb / 10);    // the burst alone, direct path only: a lower bound
             result.confident = est.confidence >= 8 && pr > 0;
             result.confidence = +est.confidence.toFixed(1);
-            result.couplingDb = +(10 * Math.log10(coupling + 1e-12)).toFixed(1);
+            let coupling;
             if (result.confident) {
-                const delay = Math.max(0, est.lag - Math.round(sr * 0.002));
                 result.delayMs = +(1000 * est.lag / sr).toFixed(1);
-                node.port.postMessage({ type: 'config', delaySamples: delay });
-                if (this.loopControl) this.loopControl.setCoupling(Math.max(coupling, 1e-6));
-            } else if (this.loopControl && coupling > 0) {
-                // nothing recognisable came back: the mic level is an upper bound for the coupling
-                this.loopControl.setCoupling(Math.min(1, Math.max(coupling, 1e-6)));
+                node.port.postMessage({ type: 'config', delaySamples: Math.max(0, est.lag - Math.round(sr * 0.002)) });
+                coupling = Math.min(powerRatio, 4 * lagGain);
+            } else {
+                // The burst is not recognisable in the mic, so it arrived at least ~15 dB below whatever
+                // else the mic was hearing.
+                coupling = Math.min(1, 0.03 * powerRatio);
             }
-            await Promise.race([ended, new Promise(res => setTimeout(res, 2500))]);
+            await firstDone;
+            if (!alive()) return;
+            // -- the rest of the burst trained the canceller. If someone was talking over it, give it one more.
+            let st = this.aecStats;
+            if (result.confident && !(st && st.adapted && st.leak < 0.3)) {
+                result.attempts = 2;
+                this.setStatus('Still checking your speakers… a second of quiet helps.', 'working');
+                await playProbe(0.9);
+                if (!alive()) return;
+                st = this.aecStats;
+            }
+            if (result.confident && st && st.adapted && st.refPow > 1e-9) {
+                // the canceller's own view of the echo is the cleanest measure: it ignores other sounds
+                const learned = Math.pow(10, st.couplingDb / 10);
+                if (isFinite(learned) && learned > 0) coupling = Math.min(Math.max(learned, lagGain), Math.max(powerRatio, lagGain));
+            }
+            result.couplingDb = +(10 * Math.log10(coupling + 1e-12)).toFixed(1);
+            if (this.loopControl) this.loopControl.setCoupling(Math.max(coupling, 1e-6));
             await new Promise(res => setTimeout(res, 120));
-            if (!this.isRunning || this.aecNode !== node) return;
-            const st = this.aecStats;
+            if (!alive()) return;
+            st = this.aecStats;
             result.adapted = !!(st && st.adapted);
             result.leak = st ? +st.leak.toFixed(3) : null;
             result.ok = true;
         } catch (err) {
             result.error = String(err && err.message);
         } finally {
-            if (src) { try { src.disconnect(); } catch (e) { /* ignore */ } }
+            sources.forEach(src => { try { src.stop(); } catch (e) { /* ignore */ } try { src.disconnect(); } catch (e) { /* ignore */ } });
             if (this.aecNode === node && node) {
                 this.checkResult = result;
                 this.calibrating = false;
@@ -1442,6 +1471,10 @@ class HarmonySinger {
         delay.connect(conv);
         conv.connect(g);
         g.connect(this.roomBus);
+        this.echoTap = ctx.createAnalyser();              // the echo alone, as it arrives at the "microphone"
+        this.echoTap.fftSize = 4096;
+        g.connect(this.echoTap);
+        this.roomNodes.push(this.echoTap);
         this.roomGainNode = g;
         this.roomDelayNode = delay;
         this.roomNodes.push(inp, delay, conv, g);
@@ -1595,11 +1628,11 @@ class HarmonySinger {
         this.aecNode = null;
         this.aecStats = null;
         this.aecPending = {};
-        for (const n of [this.refDelay, this.monoNode, this.outTap, ...(this.roomNodes || [])]) {
+        for (const n of [this.refDelay, this.monoNode, this.outTap, this.nearTap, ...(this.roomNodes || [])]) {
             if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } }
         }
         this.refDelay = null; this.monoNode = null; this.outTap = null; this.roomNodes = []; this.roomBus = null;
-        this.roomGainNode = null; this.roomDelayNode = null;
+        this.roomGainNode = null; this.roomDelayNode = null; this.nearTap = null; this.echoTap = null;
         const nativeNodes = [this.micSource, this.guardAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
         nativeNodes.forEach(n => { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } });
         this.micSource = null; this.guardAnalyser = null; this.pitchAnalyser = null; this.postGuardAnalyser = null; this.hpFilter = null;
@@ -1791,8 +1824,17 @@ class HarmonySinger {
             const k = Math.round(hz / f);
             return k >= 1 && k <= 12 && Math.abs(hz - k * f) < harmonicTol(f, hz);
         });
+        // With the canceller the guard reads the cleaned mic. What is left of our own harmonies shows
+        // up there as lines at the harmony pitches: expected, and not a howl. Leave those alone.
+        const ownRatios = this.usingCanceller()
+            ? Object.keys(this.gains).filter(v => Number.isFinite(this.voiceShifts[v])).map(v => Math.pow(2, this.voiceShifts[v] / 12))
+            : [];
+        const isOwnHarmony = (hz) => ownRatios.some(r => this.recentF0s.some(f => {
+            const k = Math.round(hz / (f * r));
+            return k >= 1 && k <= 16 && Math.abs(hz - k * f * r) < harmonicTol(f * r, hz);
+        }));
         const strong = peaks.filter(p => p.papr >= GUARD.peakPapr && p.db >= GUARD.minLevelDb &&
-            !(this.harmonicVoice && isHarmonicOf(p.hz)) && !(this.harmonicVoice && nearRecentVoice(p.hz)));
+            !(this.harmonicVoice && isHarmonicOf(p.hz)) && !(this.harmonicVoice && nearRecentVoice(p.hz)) && !isOwnHarmony(p.hz));
         for (const p of strong) {
             let c = this.guardCandidates.find(x => Math.abs(x.hz - p.hz) / p.hz < 0.03);
             if (c) {
@@ -1906,6 +1948,7 @@ class HarmonySinger {
             speakerMode: this.speakerMode, echoMode: this.echoMode, canceller: !!this.aecNode, calibrating: this.calibrating,
             check: this.checkResult, gateOpen: this.gateOpen, trim: this.speakerTrim, frozen: this.aecFrozen,
             outRms: rmsOf(this.outTap), inRms: rmsOf(this.pitchAnalyser), rawRms: rmsOf(this.guardAnalyser),
+            nearRms: rmsOf(this.nearTap), echoRms: rmsOf(this.echoTap),
             stats: this.aecStats ? { ...this.aecStats } : null,
             coupling: this.loopControl ? this.loopControl.coupling : null,
             appGain: this.loopControl ? this.loopControl.appGain : null,
