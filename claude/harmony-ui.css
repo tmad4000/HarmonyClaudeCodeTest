@@ -8,3 +8,5 @@ body{background:var(--app-page);color:var(--app-ink)} .container{padding:0;max-w
 .harmony-app{position:relative}.app-toast{position:absolute;bottom:150px;left:16px;right:16px;padding:12px;background:var(--app-raised);border:1px solid var(--app-strong);border-radius:12px;font-size:13px}.app-toast button{margin-left:8px;padding:8px;border:0;background:none;color:var(--app-accent)}
 
 #helloNote{font-size:clamp(24px,7.2vw,30px);text-wrap:balance}.release-info summary{list-style:none}.release-info summary::-webkit-details-marker{display:none}#sheetContent button{background:var(--app-raised);color:var(--app-ink);border:1px solid var(--app-line);border-radius:8px;padding:8px 12px;font:inherit;font-size:13px}#sheetContent select{min-width:0;max-width:100%}.harmony-more[aria-pressed=true]{background:var(--app-ink);color:var(--app-bg)}
+
+.gear-button{position:relative}.gear-button.has-update::after{content:"";position:absolute;right:8px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--app-accent)}

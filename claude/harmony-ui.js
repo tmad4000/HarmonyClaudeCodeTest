@@ -28,7 +28,7 @@ window.addEventListener('DOMContentLoaded', () => {
  const debugPanel=$('debugSessions');debugPanel.querySelector('p.hint').textContent='Microphone, app sound and technical readings stay in this browser. Nothing is uploaded.';const limits=document.createElement('details');limits.innerHTML='<summary>Storage and privacy</summary><p>Anyone using this browser profile can review its takes. Unkept sessions expire after14days;100MB unkept cap,10minutes audio per take. Keep prevents automatic deletion. When kept audio fills storage, events continue without audio.</p>';debugPanel.append(limits);debugPanel.querySelector('[data-skip]').hidden=true;
  const feedback=document.createElement('span');feedback.id='harmony-feedback-mount';sheet.querySelector('#sheetContent').append(feedback);
  const speakers=speakersSection;for(const id of ['speakerModeStatus','speakerCheckStatus','protectionHint'])speakers.append($(id));
- const about=document.createElement('section');about.className='card';about.innerHTML='<h2>About Harmony</h2><p id=sheetBuildTime></p><p>Version <span id=sheetVersion></span></p><button id=sheetCheckVersion type=button>Check for update</button>';sheet.querySelector('#sheetContent').append(about);
+ const about=document.createElement('section');about.className='card';about.innerHTML='<h2>About Harmony</h2><p id=sheetBuildTime></p><p>Version <span id=sheetVersion></span></p><button id=sheetCheckVersion type=button>Check for update</button>';about.append($('releaseStatus'),$('refreshVersion'));sheet.querySelector('#sheetContent').append(about);
  oldHeader.remove();container.replaceChildren(app,sheet);$('sheetVersion').textContent=document.querySelector('meta[name="harmony-version"]').content;$('sheetCheckVersion').onclick=()=>$('checkVersion').click();
  const open=(id)=>{if(!sheet.open)sheet.showModal();if(id)$(id)?.scrollIntoView({block:'start'});};
  $('openSettings').onclick=()=>open();$('debugChip').onclick=()=>open('debugSessions');$('openKey').onclick=()=>open('keyLabel');$('closeSettings').onclick=()=>sheet.close();sheet.addEventListener('click',e=>{if(e.target===sheet)sheet.close();});
@@ -55,7 +55,7 @@ window.addEventListener('DOMContentLoaded', () => {
    const inMain=styles.some(([,mode])=>mode===h.currentMode);more.textContent=inMain?'More':document.querySelector(`.mode-btn[data-mode="${h.currentMode}"]`)?.textContent||h.currentMode;more.setAttribute('aria-pressed',String(!inMain));
    document.querySelectorAll('.harmony-chip').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.harmony===h.currentMode&&(!b.dataset.positionChoice||b.dataset.positionChoice===h.harmonyPosition||h.harmonyPosition==='both'))));}
   $('openKey').textContent=$('keyStatus').textContent.replace('Auto key: listening…','Key · Auto')+' ▾';
-  $('sheetBuildTime').textContent=$('buildTime').textContent;
+  $('sheetBuildTime').textContent=$('buildTime').textContent;$('openSettings').classList.toggle('has-update',!!$('releaseStatus').textContent);
   const status=$('status').textContent;$('appStatus').textContent=h.lastError?status:(h.calibrating?'Checking speakers…':'');
   const p=h.isRunning&&h.voicePresent&&h.smoothedPitch?69+12*Math.log2(h.smoothedPitch/440):null;
   if(h.isRunning)history.push({t:now,p,targets:p===null||(h.speakerMode&&!h.gateOpen)?[]:Object.entries(h.voiceTargets).filter(([k])=>h.gains[k]?.gain.value>.001).map(([,m])=>m)});
