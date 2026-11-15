@@ -1,3 +1,13 @@
+## 2026-11-15-quiet-thirds-1
+
+Quiet singers using Third above, Third below or both with voice backing on speakers can be rejected by an unmeasured room-echo estimate even when pitch tracking accepts their voice. This patch establishes near-end evidence before playback and follows a distinct singer pitch instead of treating the initial room estimate as a measurement. It also distinguishes unknown, speaker-check and learned echo estimates in the debug log.
+
+The change is limited to thirds with voice backing. Other modes preserve the previous classifier and controller behavior. User volume, microphone makeup gain, reverb, encoders and the limiter are unchanged; howl/notch and hot-output safeguards remain.
+
+Validation: independent source review; 20 sandboxed production-classifier room/decay cases passed, including 44.1/48 kHz, above/below/both, reference-only input and strong coupling. A 3,600-frame comparison preserves the excluded modes' previous behavior. Actual private quiet-phone audio replay kept the gate open for about 90–95% of measured held-voice samples at 1x/4x CPU, compared with historical same-mode uncalibrated runs around 71%/64%. Occasional dropouts remain, and replay timing varies. One additional measured-control run started at a different fixture phase and is not an aligned comparator; its pre-observation gap counter did not increase during measurement.
+
+Singing on real speakers and physical iPhone output remain unverified. Strong echo can still suppress singing; the existing strong-coupling unison tail is not fixed in this release. The previous continuous-control-1 release remains available for rollback.
+
 ## 2026-11-15-continuous-control-1
 
 - Audio check now has a large explicit Continuous ON/OFF button and visible actual-state confirmation. The main Audio check label also shows ON while active, and clears after Stop even when its panel is closed. Changes and session-start state are logged.
