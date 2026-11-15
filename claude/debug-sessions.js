@@ -27,7 +27,7 @@
         async prune(){const result=await this.store.prune();if(result.full&&this.recorder)this.limitAudio('storage full: unpin or export · events continue');if(this.activeId&&!(await this.rows()).some(r=>r.id===this.activeId))throw new Error('Not saving · session storage limit');return result;}
         async startEventsOnly(h,generation) {
             if(!this.enabled||!h.isRunning||generation!==this.generation)return;
-            const id=crypto.randomUUID(),events=h.getLog().slice(-100),row={id,started:Date.now(),kind:'events',settings:h.snapshotSettings(),browser:navigator.userAgent,platform:navigator.platform,version:document.querySelector('meta[name="harmony-version"]')?.content,events};
+            const id=crypto.randomUUID(),events=h.getLog().slice(-100).map(e=>JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v))),row={id,started:Date.now(),kind:'events',settings:h.snapshotSettings(),browser:navigator.userAgent,platform:navigator.platform,version:document.querySelector('meta[name="harmony-version"]')?.content,events};
             this.activeId=id;this.latestId=id;
             const persist=async()=>{try{await this.write({...row,events:events.slice(),bytes:new Blob([JSON.stringify(events)]).size});}catch(_){if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage unavailable');}};
             this.event=e=>{if(events.length<5000)events.push(JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v)));};

@@ -83,7 +83,7 @@ const GUARD = {
     sustainFrames: 12,     // ... persistent for ~1.2 s
     releaseMs: 20000,      // let a notch go after this long without re-detection
     duckMs: 2000,          // duck harmonies briefly when a howl is caught
-    analyseEveryFrames: 6  // ~100 ms at 60 fps
+    analyseEveryFrames: 3  // ~100 ms at the bounded30Hz pitch-control cadence
 };
 
 // Instrumental backing
@@ -1199,6 +1199,7 @@ class HarmonySinger {
                     if(track)await track.applyConstraints({echoCancellation:true,noiseSuppression:false,autoGainControl:false});
                     this.echoMode='browser';
                     document.getElementById('echoModeSelect').value='browser';
+                    this.renderSpeakerMode();
                     ctx.__harmonyAecModule = null;
                     this.aecNode = null;
                     useCanceller = false;
