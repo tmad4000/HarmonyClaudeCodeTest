@@ -6,6 +6,7 @@ def require_altool_success(text,operation,artifact):
     if re.search(r'\b(?:ERROR|FAILED|FAILURE)\b',text,re.IGNORECASE):
         raise ValueError('altool reported an error despite its process exit status; inspect the task log')
     verb='validating' if operation=='validate' else 'uploading'
-    expected="No errors "+verb+" archive at '"+str(artifact)+"'."
-    if expected not in [line.strip() for line in text.splitlines()]:
+    # Apple includes a warning count in the same exact-artifact success line.
+    expected = r"No errors(?:, [1-9][0-9]* warnings?,)? " + verb + r" archive at '" + re.escape(str(artifact)) + r"'\."
+    if not any(re.fullmatch(expected,line.strip()) for line in text.splitlines()):
         raise ValueError('altool did not confirm success for the exact verified artifact')
