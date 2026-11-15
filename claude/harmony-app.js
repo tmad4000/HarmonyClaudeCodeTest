@@ -1111,6 +1111,8 @@ class HarmonySinger {
             voicePresent: this.voicePresent, debugContinuous: this.debugContinuous,
             contextState: state, sampleRate: ctx?.sampleRate ?? null,
             baseLatency: ctx?.baseLatency ?? null, outputLatency: ctx?.outputLatency ?? null,
+            destinationMuted: !!Tone.getDestination().mute, destinationDb: Tone.getDestination().volume.value,
+            gateGain: this.gateGain?.gain.value ?? null, masterGain: this.masterGain?.gain.value ?? null,
             canceller: !!this.aecNode, trim: this.speakerTrim,
             ducking: !this.debugContinuous && this.speakerMode && now < this.duckUntil
         });
@@ -1124,8 +1126,20 @@ class HarmonySinger {
         const checkCurrent = () => { if (!current()) throw Object.assign(new Error('Microphone startup was interrupted; tap Sing again.'), { name: 'AbortError', startupCancelled: true }); };
         this.lastError = null;
         try {
+            // Select simultaneous capture/playback before resuming Web Audio or requesting
+            // the microphone. Safari otherwise decides the category while the graph starts.
+            this.audioSessionSetup = { supported: false };
+            try {
+                const session = navigator.audioSession;
+                if (session) {
+                    const previousType = session.type;
+                    session.type = 'play-and-record';
+                    this.audioSessionSetup = { supported: true, requestedType: 'play-and-record', previousType, type: session.type, state: session.state };
+                }
+            } catch (error) {
+                this.audioSessionSetup = { supported: true, requestedType: 'play-and-record', error: error.name };
+            }
             // Both resume calls are initiated before yielding the Sing gesture.
-            // Do not force AudioSession.type: it can change routing and playback volume.
             const existingContext = Tone.getContext().rawContext;
             const starting = [Tone.start()];
             if (existingContext?.resume && ['suspended', 'interrupted'].includes(existingContext.state)) starting.push(existingContext.resume());
@@ -1136,7 +1150,7 @@ class HarmonySinger {
             let audioSession = { supported: false };
             try { if (navigator.audioSession) audioSession = { supported: true, type: navigator.audioSession.type, state: navigator.audioSession.state }; }
             catch (error) { audioSession = { supported: true, readable: false, error: error.name }; }
-            this.logEvent('sing-context', { state: ctx.state, sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency ?? null, outputLatency: ctx.outputLatency ?? null, audioSession });
+            this.logEvent('sing-context', { state: ctx.state, sampleRate: ctx.sampleRate, baseLatency: ctx.baseLatency ?? null, outputLatency: ctx.outputLatency ?? null, audioSession, audioSessionSetup: this.audioSessionSetup });
             if(!ctx.__harmonyLogged){ctx.__harmonyLogged=true;ctx.addEventListener('statechange',()=>this.logEvent('context-state',{state:ctx.state}));}
             const roomSim = this.params.get('room') === '1';
             let useCanceller = this.usingCanceller();

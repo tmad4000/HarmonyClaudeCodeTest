@@ -1,3 +1,13 @@
+## 2026-11-15-ios-audio-session-1
+
+Harmony now requests the browser's simultaneous playback-and-recording audio session before resuming Web Audio or asking for the microphone. Previously it only read the browser-selected session type. The request is feature-detected; missing or rejected support leaves microphone startup available. Sing still initiates audio resume synchronously in the same user gesture.
+
+Audio check shows the actual audio session type/state and warns when the app destination is muted. Debug sessions retain the session-selection result, session interruptions, destination mute/volume and gate/master gains alongside the existing digital output meter. The meter is before the system output; nonzero digital samples do not establish which physical speaker or headset is playing. No gain boost, gate/feedback weakening, replacement recorder, silent audio loop or native audio-session override is included.
+
+The browser's audio-session request does not let a web page force the iPhone receiver, speaker, Bluetooth profile, hardware volume or silent switch. The native owner separately controls the app's AVAudioSession. Physical iPhone output remains pending a real-device retest; simultaneous microphone/playback is supported by the platform. Upload reachability is investigated separately; existing queue, credentials, consent and removal fences are unchanged.
+
+Validation: independent review and seven sandboxed Chrome cases passed with the default autoplay policy and genuine button clicks. Tests exercise supported/missing/throwing AudioSession APIs, selection before resume/capture, nonzero shifted output, Continuous gate bypass, cancellation/retry, and local-only telemetry/listener cleanup. No physical iPhone speaker, receiver or silent-switch outcome is claimed.
+
 ## 2026-11-15-startup-cancel-1
 
 Stopping while microphone startup waited for a device label or audio module could clear the mic node, then let the old startup continue and throw `inputNode.connect` on null. Startup now has an attempt generation checked after asynchronous acquisition and graph setup. Late microphone streams are stopped, late voice/instrument factories release their local resources, and cancellation does not trigger an echo-canceller fallback or revive a stopped graph.
