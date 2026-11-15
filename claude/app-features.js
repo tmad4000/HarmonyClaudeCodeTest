@@ -1,7 +1,7 @@
 /* Keep version.json and this identifier in sync whenever the site is released. */
 (() => {
-    const VERSION = '2026-11-15-local-tone-1';
-    const BUILD_TIME = '2026-11-15T10:00:40.378Z';
+    const VERSION = '2026-11-15-quiet-start-1';
+    const BUILD_TIME = '2026-11-15T10:21:04.170Z';
     const KEY = 'harmony-singer-settings-v1';
     const params = new URLSearchParams(location.search);
     const selects = { keyRoot: 'key', engineSelect: 'engine', backingSelect: 'backing', backingStyleSelect: 'backingStyle', recordMode: 'recordmode' };
