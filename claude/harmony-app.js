@@ -533,7 +533,7 @@ class HarmonySinger {
     // ---------- UI ----------
 
     initUI() {
-        document.getElementById('startBtn').addEventListener('click', () => { this.debugNoticeAccepted = true; this.toggle(); });
+        document.getElementById('startBtn').addEventListener('click', () => { this.debugNoticeAccepted = true; this.takeUserStarted=true; this.toggle(); });
 
         document.querySelectorAll('.mode-btn:not(.scale-btn):not(.position-btn)').forEach(btn => {
             btn.addEventListener('click', (e) => this.setMode(e.currentTarget.dataset.mode));
@@ -818,25 +818,34 @@ class HarmonySinger {
     setOutputPosition(position) {
         this.outputDefaultPending=false;
         if (![0,1].includes(position) || position === this.outputPosition) return;
-        const wasSpeaker = this.speakerMode;
-        this.outputPosition = position;
-        if (this.loopControl) { this.loopControl.holdMs=this.extraProtection ? 600 : 800; this.loopControl.trimHigh = this.extraProtection ? 0.1 : 0.25; this.loopControl.trimLow = this.extraProtection ? 0.07 : 0.17; }
-        this.logEvent('output-profile', {position});
-        if (wasSpeaker && position>0) {
-            if(this.lpFilter) this.lpFilter.frequency.rampTo(position===1 ? 10000 : 8000,0.1);
-            if(position===1) this.duckUntil=0;
-            this.updateGains(); this.renderSpeakerMode();
-        } else this.setSpeakerMode(position > 0);
+        this.outputPosition=position;this.logEvent('output-profile',{position});this.setSpeakerMode(position>0);
     }
 
-    setSpeakerMode(on) {
-        if (this.speakerMode === !!on) { this.renderSpeakerMode(); return; }
-        this.speakerMode = !!on;
-        if (!on) this.outputPosition=0; else if (!this.outputPosition) this.outputPosition=1;
-        this.cancellerFailed = false;
-        this.logEvent('speaker-mode', { on: this.speakerMode });
-        this.renderSpeakerMode();
-        this.restartIfRunning();
+    setSpeakerMode(on){
+        on=!!on;if(this.speakerMode===on){this.renderSpeakerMode();return;}
+        this.speakerMode=on;this.outputPosition=on?1:0;this.logEvent('speaker-mode',{on,live:this.isRunning});
+        if(this.isRunning&&this.rawRouteGain){
+            const t=this.audioContext.currentTime;
+            this.rawRouteGain.gain.setTargetAtTime(on?0:1,t,.02);this.cleanRouteGain.gain.setTargetAtTime(on?1:0,t,.02);
+            this.stereoRouteGain.gain.setTargetAtTime(on?0:1,t,.02);this.monoRouteGain.gain.setTargetAtTime(on?1:0,t,.02);
+            if(this.aecNode){if(on)this.aecNode.port.postMessage({type:'reset'});this.aecNode.port.postMessage({type:'config',bypass:!on,adapt:on});}
+            this.loopControl?.reset();if(on&&this.voicePresent&&this.loopControl)this.loopControl.lastNearAt=performance.now();
+            this.speakerTrim=1;this.trimGain.gain.rampTo(1,.04);this.duckUntil=0;
+            this.lpFilter.frequency.rampTo(on?(this.usingCanceller()?(this.extraProtection?8000:10000):6000):20000,.06);
+            for(let i=0;i<this.notches.length;i++){this.notches[i].active=false;this.notchNodes[i].frequency.setTargetAtTime(20,t,.02);}
+            this.updateGains();
+        }
+        this.syncTrackProcessing();this.renderSpeakerMode();
+    }
+
+    syncTrackProcessing(){
+        const track=this.mediaStream?.getAudioTracks()[0];if(!track||track.readyState!=='live')return Promise.resolve();
+        this.trackConstraintQueue=(this.trackConstraintQueue||Promise.resolve()).catch(()=>{}).then(async()=>{
+            if(this.mediaStream?.getAudioTracks()[0]!==track||track.readyState!=='live')return;
+            const requested={echoCancellation:this.speakerMode&&this.echoMode==='browser',noiseSuppression:false,autoGainControl:false};
+            try{const actual=track.getSettings(),existing=track.getConstraints();if(!Object.entries(requested).every(([k,v])=>actual[k]===v&&existing[k]===v))await track.applyConstraints(requested);if(this.mediaStream?.getAudioTracks()[0]===track){this.browserEcUnavailable=requested.echoCancellation&&track.getSettings().echoCancellation!==true;this.logEvent('track-processing',{requested,actual:track.getSettings(),browserEcUnavailable:this.browserEcUnavailable});}}
+            catch(e){if(this.mediaStream?.getAudioTracks()[0]===track)this.browserEcUnavailable=!!requested.echoCancellation;this.logEvent('track-processing-error',{requested,message:e.message});}
+        });return this.trackConstraintQueue;
     }
 
     setEchoMode(mode) {
@@ -1039,6 +1048,12 @@ class HarmonySinger {
 
     // ---------- Audio graph ----------
 
+    async setupRawObserver(ctx){
+        try{if(!ctx.__rawObserverModule)ctx.__rawObserverModule=(async()=>{const r=await fetch('raw-input-observer.js');if(!r.ok)throw new Error('Raw observer HTTP '+r.status);const url=URL.createObjectURL(new Blob([await r.text()],{type:'text/javascript'}));try{await ctx.audioWorklet.addModule(url);}finally{URL.revokeObjectURL(url);}})();await ctx.__rawObserverModule;
+            this.rawObserver=Tone.getContext().createAudioWorkletNode('harmony-raw-input-observer',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});this.rawObserver.port.onmessage=e=>{this.rawStats=e.data;};this.rawObserverSink=ctx.createGain();this.rawObserverSink.gain.value=0;this.micSource.connect(this.rawObserver);this.rawObserver.connect(this.rawObserverSink);this.rawObserverSink.connect(ctx.destination);
+        }catch(e){this.logEvent('raw-observer-unavailable',{message:e.message});}
+    }
+
     async runSpeakerCheckNow(){
         if(this.starting)throw new Error('Wait for audio to start, then run the check');
         if(!this.speakerMode)throw new Error('Choose Speakers before running the check');
@@ -1063,20 +1078,21 @@ class HarmonySinger {
     async readOutputLabel(){try{const outputs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput');return (outputs.find(d=>d.deviceId==='default')||outputs[0])?.label||'Not exposed by browser';}catch(_){return 'Not exposed by browser';}}
 
     async toggle() {
-        if (this.isRunning) this.stop(); else await this.start();
+        if (this.isRunning||this.starting) this.stop(); else await this.start();
     }
 
     async start() {
         if (this.starting || this.isRunning) return;
         this.starting = true;
+        const generation=this.startGeneration=(this.startGeneration||0)+1,checkStart=()=>{if(generation!==this.startGeneration)throw new DOMException('Start cancelled','AbortError');};
         this.lastError = null;
         try {
-            await Tone.start();
+            await Tone.start();checkStart();
             this.audioContext = Tone.getContext().rawContext;
             const ctx = this.audioContext;
             if(!ctx.__harmonyLogged){ctx.__harmonyLogged=true;ctx.addEventListener('statechange',()=>this.logEvent('context-state',{state:ctx.state}));}
             const roomSim = this.params.get('room') === '1';
-            let useCanceller = this.usingCanceller();
+            let useCanceller = this.echoMode==='canceller'&&this.cancellerAvailable;
 
             // ---- input source
             if (this.params.get('input') === 'tone') {
@@ -1150,16 +1166,18 @@ class HarmonySinger {
                 const browserEc = this.speakerMode && this.echoMode === 'browser';
                 const audioConstraints = {
                     echoCancellation: browserEc,
-                    noiseSuppression: browserEc && this.params.get('ns') !== '0',
+                    noiseSuppression: false,
                     autoGainControl: false,
                     sampleRate: ctx.sampleRate
                 };
                 if(this.reusableStream && this.reusableStream.getAudioTracks()[0]?.readyState==='live'){
                     this.mediaStream=this.reusableStream;this.reusableStream=null;
                     await this.mediaStream.getAudioTracks()[0].applyConstraints(audioConstraints);
-                }else this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                }else {const acquired=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});if(generation!==this.startGeneration){acquired.getTracks().forEach(t=>t.stop());checkStart();}this.mediaStream=acquired;}
+                checkStart();
                 const track = this.mediaStream.getAudioTracks()[0];
                 const settings = track.getSettings();
+                for(const type of ['mute','unmute','ended'])track.addEventListener(type,()=>this.logEvent('track-'+type,{readyState:track.readyState,muted:track.muted,contextState:ctx.state}));
                 console.log('Actual audio settings:', settings);
                 this.logEvent('start', { input: 'microphone', requested: audioConstraints, actual: settings, label: track.label, engine: this.engine, speakerMode: this.speakerMode, echoMode: this.speakerMode ? this.echoMode : null, sampleRate: ctx.sampleRate,
                     baseLatency: ctx.baseLatency ?? null, outputLatency: ctx.outputLatency ?? null });
@@ -1172,10 +1190,10 @@ class HarmonySinger {
                 this.micSource = ctx.createMediaStreamSource(this.mediaStream);
             }
 
-            this.outputLabel=await this.readOutputLabel();
+            this.outputLabel=await this.readOutputLabel();checkStart();
             this.logEvent('output-route',{label:this.outputLabel,source:'Browser default description; physical route not guaranteed'});
             if(this.outputDefaultPending&&/headphone|airpod|bud|earphone/i.test(this.outputLabel)){
-                this.speakerMode=false;this.outputPosition=0;useCanceller=false;this.renderSpeakerMode();
+                this.speakerMode=false;this.outputPosition=0;this.renderSpeakerMode();
                 const track=this.mediaStream?.getAudioTracks()[0];if(track)await track.applyConstraints({echoCancellation:false,noiseSuppression:false,autoGainControl:false});
             }
             this.outputDefaultPending=false;
@@ -1205,26 +1223,27 @@ class HarmonySinger {
                         const moduleUrl=URL.createObjectURL(new Blob([await response.text()],{type:'text/javascript'}));
                         try{await ctx.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
                     })();
-                    await ctx.__harmonyAecModule;
+                    await ctx.__harmonyAecModule;checkStart();
                     const latency = ((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * ctx.sampleRate;
                     this.aecDelayGuess = Math.max(0, Math.round(latency - 0.012 * ctx.sampleRate));
                     this.aecNode = Tone.getContext().createAudioWorkletNode(HEC.PROCESSOR_NAME, {
                         numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [1],
                         channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
-                        processorOptions: { tailMs: 110, delaySamples: this.aecDelayGuess }
+                        processorOptions: { tailMs: 110, delaySamples: this.aecDelayGuess, bypass:!this.speakerMode }
                     });
                     this.aecNode.port.onmessage = (ev) => this.onAecMessage(ev.data || {});
                     this.aecNode.onprocessorerror = () => {
                         this.logEvent('audio-error', { message: 'Echo worklet failed; stopping to prevent feedback' });
                         this.stop();
                     };
+                    this.cancellerFailed=false;
                     this.micSource.connect(this.aecNode, 0, 0);
                     inputNode = this.aecNode;
                 } catch (aecErr) {
-                    console.warn('Echo canceller unavailable, continuing without it:', aecErr);
+                    checkStart();console.warn('Echo canceller unavailable, continuing without it:', aecErr);
                     this.logEvent('warning', { message: 'Reference canceller unavailable; falling back to browser echo cancellation', error: String(aecErr && aecErr.message) });
                     const track=this.mediaStream?.getAudioTracks()[0];
-                    if(track)await track.applyConstraints({echoCancellation:true,noiseSuppression:false,autoGainControl:false});
+                    if(track)await track.applyConstraints({echoCancellation:this.speakerMode,noiseSuppression:false,autoGainControl:false});
                     this.echoMode='browser';
                     document.getElementById('echoModeSelect').value='browser';
                     this.renderSpeakerMode();
@@ -1247,27 +1266,15 @@ class HarmonySinger {
             this.mic = new Tone.Gain(1);
             this.notchNodes = [];
             this.notches = [];
-            if (this.speakerMode) {
-                this.hpFilter = ctx.createBiquadFilter();
-                this.hpFilter.type = 'highpass';
-                this.hpFilter.frequency.value = 70;
-                this.hpFilter.Q.value = 0.7;
-                let last = this.hpFilter;
-                for (let i = 0; i < GUARD.maxNotches; i++) {
-                    const n = ctx.createBiquadFilter();
-                    n.type = 'notch';
-                    n.frequency.value = 20;  // parked: inaudible
-                    n.Q.value = GUARD.notchQ;
-                    last.connect(n);
-                    last = n;
-                    this.notchNodes.push(n);
-                    this.notches.push({ hz: 20, lastSeen: 0, active: false });
-                }
-                inputNode.connect(this.hpFilter);
-                last.connect(this.mic.input);
-            } else {
-                inputNode.connect(this.mic.input);
-            }
+            this.hpFilter = ctx.createBiquadFilter();this.hpFilter.type='highpass';this.hpFilter.frequency.value=70;this.hpFilter.Q.value=.7;
+            let guarded=this.hpFilter;
+            for(let i=0;i<GUARD.maxNotches;i++){const n=ctx.createBiquadFilter();n.type='notch';n.frequency.value=20;n.Q.value=GUARD.notchQ;guarded.connect(n);guarded=n;this.notchNodes.push(n);this.notches.push({hz:20,lastSeen:0,active:false});}
+            this.rawRouteGain=ctx.createGain();this.cleanRouteGain=ctx.createGain();
+            this.rawRouteGain.gain.value=this.speakerMode?0:1;this.cleanRouteGain.gain.value=this.speakerMode?1:0;
+            this.micSource.connect(this.rawRouteGain);this.rawRouteGain.connect(this.mic.input);
+            inputNode.connect(this.hpFilter);guarded.connect(this.cleanRouteGain);this.cleanRouteGain.connect(this.mic.input);
+            this.rawAnalyser=ctx.createAnalyser();this.rawAnalyser.fftSize=2048;this.micSource.connect(this.rawAnalyser);
+            this.rawStats=null;await this.setupRawObserver(ctx);checkStart();
 
             // ---- analysers on the guarded input
             this.pitchAnalyser = ctx.createAnalyser();
@@ -1284,7 +1291,7 @@ class HarmonySinger {
             this.chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: this.chorusAmount });
             this.chorus.start();
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
-            await this.reverb.ready; // Constructor already generates the impulse response.
+            await this.reverb.ready;checkStart(); // Constructor already generates the impulse response.
             this.masterGain = new Tone.Gain(1);
             this.limiter = new Tone.Limiter(-3);
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
@@ -1305,25 +1312,17 @@ class HarmonySinger {
 
             // dry: mic -> dryGain -> chorus -> reverb -> master -> limiter -> out
             this.mic.connect(this.dryGain);
-            this.dryGain.connect(this.chorus);
+            this.dryGain.connect(this.masterGain); // Own voice is continuous and bypasses harmony effects/gating.
             // harmonies: voices -> gateGain -> trimGain -> lpFilter -> chorus
             this.gateGain.connect(this.trimGain);
             this.trimGain.connect(this.lpFilter);
             this.lpFilter.connect(this.chorus);
             this.chorus.connect(this.reverb);
             this.reverb.connect(this.masterGain);
-            if (this.speakerMode) {
-                // One speaker signal: both laptop speakers play the same thing, so the room is a single
-                // echo path the canceller can model (stereo chorus/reverb would be two paths, one reference).
-                this.monoNode = ctx.createGain();
-                this.monoNode.channelCount = 1;
-                this.monoNode.channelCountMode = 'explicit';
-                this.monoNode.channelInterpretation = 'speakers';
-                Tone.connect(this.masterGain, this.monoNode);
-                Tone.connect(this.monoNode, this.limiter);
-            } else {
-                this.masterGain.connect(this.limiter);
-            }
+            this.monoNode=ctx.createGain();this.monoNode.channelCount=1;this.monoNode.channelCountMode='explicit';this.monoNode.channelInterpretation='speakers';
+            this.stereoRouteGain=ctx.createGain();this.monoRouteGain=ctx.createGain();this.stereoRouteGain.gain.value=this.speakerMode?0:1;this.monoRouteGain.gain.value=this.speakerMode?1:0;
+            Tone.connect(this.masterGain,this.stereoRouteGain);Tone.connect(this.stereoRouteGain,this.limiter);
+            Tone.connect(this.masterGain,this.monoNode);this.monoNode.connect(this.monoRouteGain);Tone.connect(this.monoRouteGain,this.limiter);
             this.limiter.toDestination();
             this.outTap = ctx.createAnalyser();
             this.outTap.fftSize = 4096;
@@ -1341,7 +1340,7 @@ class HarmonySinger {
             if (roomSim) this.buildRoom(ctx);
 
             try {
-                await this.createPitchShifters();
+                await this.createPitchShifters();checkStart();
             } catch (engineErr) {
                 if (this.engine === 'stretch') {
                     console.warn('Signalsmith engine failed, falling back to granular:', engineErr);
@@ -1349,13 +1348,13 @@ class HarmonySinger {
                     this.engine = 'granular';
                     const sel = document.getElementById('engineSelect');
                     if (sel) sel.value = 'granular';
-                    await this.createPitchShifters();
+                    await this.createPitchShifters();checkStart();
                 } else {
                     throw engineErr;
                 }
             }
 
-            if (this.instrumentKind()) await this.ensureInstrument(this.instrumentKind());
+            if (this.instrumentKind()) await this.ensureInstrument(this.instrumentKind());checkStart();
             this.speakerTrim = 1;
             this.aecFrozen = false;
             this.checkResult = null;
@@ -1374,12 +1373,14 @@ class HarmonySinger {
             this.updateUI();
             this.startPitchDetection();
             this.drawWaveform();
-            if (this.calibrating) {await this.runSpeakerCheck();if(this.checkResult?.ok&&this.checkResult.confident)this.speakerChecks.set(checkKey,{...this.checkResult});}
+            if (this.calibrating) {await this.runSpeakerCheck();checkStart();if(this.checkResult?.ok&&this.checkResult.confident)this.speakerChecks.set(checkKey,{...this.checkResult});}
             const hint=document.getElementById('protectionHint');
             if(hint)hint.hidden=!(this.checkResult?.couplingDb>-6&&!this.extraProtection);
             if (this.isRunning && this.params.get('record') === '1') this.startRecording();
             if (this.isRunning && this.debugNoticeAccepted) window.harmonyDebug?.start(this);
+            if(this.isRunning&&this.takeUserStarted)window.harmonyTakes?.start(this);
         } catch (err) {
+            if(generation!==this.startGeneration){this.stop();return;}
             console.error('Error starting:', err);
             this.logEvent('error', { message: String(err && err.message), name: err && err.name });
             if(window.harmonyDebug)window.harmonyDebug.skip=false;
@@ -1632,7 +1633,7 @@ class HarmonySinger {
     }
 
     updateGains() {
-        if (this.dryGain) this.dryGain.gain.value = this.speakerMode ? 0 : this.dryVolume;
+        if (this.dryGain) this.dryGain.gain.rampTo(this.speakerMode ? 0 : this.dryVolume,.04);
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
         // Without the canceller, speaker mode needs a fixed cut for gain-before-feedback. With it, level is
         // only held back when the measured loop needs it (speakerTrim, applied on trimGain).
@@ -1693,6 +1694,9 @@ class HarmonySinger {
     }
 
     stop(preserveInput = false) {
+        this.startGeneration=(this.startGeneration||0)+1;
+        window.harmonyTakes?.stop();
+        if(!preserveInput)this.takeUserStarted=false;
         clearTimeout(this.restartTimer);
         window.harmonyDebug?.stop();
         if(!preserveInput && !this.internalRestart) window.harmonyDebug && (window.harmonyDebug.skip=false);
@@ -1729,8 +1733,9 @@ class HarmonySinger {
         }
         this.refDelay = null; this.monoNode = null; this.outTap = null; this.roomNodes = []; this.roomBus = null;
         this.roomGainNode = null; this.roomDelayNode = null; this.nearTap = null; this.echoTap = null;
-        const nativeNodes = [this.micSource, this.guardAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
+        const nativeNodes = [this.rawRouteGain,this.cleanRouteGain,this.stereoRouteGain,this.monoRouteGain,this.rawAnalyser,this.rawObserver,this.rawObserverSink,this.micSource, this.guardAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
         nativeNodes.forEach(n => { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } });
+        if(this.rawObserver){this.rawObserver.port.postMessage({type:'stop'});this.rawObserver.port.onmessage=null;}this.rawObserver=null;this.rawAnalyser=null;this.rawRouteGain=null;this.cleanRouteGain=null;this.stereoRouteGain=null;this.monoRouteGain=null;
         this.micSource = null; this.guardAnalyser = null; this.pitchAnalyser = null; this.postGuardAnalyser = null; this.hpFilter = null;
         this.notchNodes = [];
         this.notches = [];
@@ -1755,13 +1760,14 @@ class HarmonySinger {
     // ---------- Pitch detection + feedback guard loop ----------
 
     startPitchDetection() {
-        const buf = new Float32Array(this.pitchAnalyser.fftSize);
+        const buf = new Float32Array(this.pitchAnalyser.fftSize),raw=new Float32Array(2048),smallRaw=new Float32Array(512);
         const detect = () => {
             if (!this.isRunning) return;
             this.frameCounter++;
             const now = performance.now();
             if (this.lastDetectAt && now - this.lastDetectAt > 150) this.logEvent('control-delay', { ms: Math.round(now-this.lastDetectAt) });
             this.lastDetectAt = now;
+            if(this.rawAnalyser){this.rawAnalyser.getFloatTimeDomainData(raw);let power=0;for(let i=0;i<raw.length;i++)power+=raw[i]*raw[i];this.rawInputRms=Math.sqrt(power/raw.length);if(this.frameCounter%2===0){for(let i=0;i<512;i++)smallRaw[i]=raw[i*4];this.rawPitch=yinPitch(smallRaw,this.audioContext.sampleRate/4);}}
             this.pitchAnalyser.getFloatTimeDomainData(buf);
             let rms = 0;
             for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
@@ -1866,7 +1872,7 @@ class HarmonySinger {
                 this.lastStatLog = now;
                 this.logEvent('stats', {
                     rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
-                    gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
+                    rawInputRms:this.rawInputRms,rawInput:this.rawStats,gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
                     peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)]),
                     ...(loop && this.aecStats ? { aec: {
                         adapted: this.aecStats.adapted, leak: +this.aecStats.leak.toFixed(3), micDb: Math.round(this.aecStats.micDb), outDb: Math.round(this.aecStats.outDb),
