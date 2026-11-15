@@ -22,7 +22,7 @@ function createWorker(){
  };
 }
 $('cancel').onclick=()=>{worker?.terminate();resetEngine();if(pending){pending.reject(Error('Rendering cancelled. Reload the engine to try again.'));pending=null;}else $('status').textContent='Loading cancelled.';};
-$('load').onclick=()=>{worker?.terminate();$('load').disabled=true;$('cancel').hidden=false;$('status').textContent='Downloading 39 MB neural model and loading engine…';createWorker();worker.postMessage({type:'load'});};
+$('load').onclick=()=>{worker?.terminate();$('load').disabled=true;$('cancel').hidden=false;$('status').textContent='Downloading 40 MB neural model and loading engine…';createWorker();worker.postMessage({type:'load'});};
 function parseWav(buffer){
  const v=new DataView(buffer),ascii=(o,n)=>String.fromCharCode(...new Uint8Array(buffer,o,n));
  if(buffer.byteLength<44||ascii(0,4)!=='RIFF'||ascii(8,4)!=='WAVE')throw Error('Use a PCM WAV file.');

@@ -18,7 +18,7 @@ constant Cast toFP32 before existing arithmetic; no fine-tuning. Modified model
 28396756 bytes (gzip26461509), SHA256
 c8fa9907a7aa94321d4675fdc157253946b1f1eff91b79e155040a0db8849f0a.
 Distributed as two14.2MB shards; loader concatenates and verifies model SHA256.
-Total model+WASM+JS about39MB. Each deployed file is below15MB.
+Total model+WASM+JS about 40 MB. Each deployed file is below15MB.
 Model/runtime load only after explicit Load engine click. All dependencies are
 vendored same-origin: onnxruntime-web1.22.0 (2025-05-09), fft.js4.0.4 (2021-01-11).
 No CDN, remote code fetch, WebGPU dependency, cross-origin isolation, or global
