@@ -27,3 +27,8 @@ Fable v2 app shell on the already-shipped incremental engine: equal output pills
 
 ## Local Tone follow-up
 Vendor the exact previously loadedTone14.8.49 bytes and licenses; no version upgrade. No CDN request is required on page load. Baseline screenshots are archived in docs/screenshots/2026-11-15 with68 dark/light, phone/desktop, mode and state views. Both themes and the Mix→Speakers settings order were inspected. About now has a small version/build stamp with touch/keyboard exact details; sourcecommit metadata can be supplied in the release manifest. Audio processing unchanged. Real singing on speakers remains unverified until Jacob records a take.
+
+
+## Quiet startup and speaker-check consent
+The reported startup static was reproduced as the intentional speaker-check noise: same noise-first fake microphone, default check output peak0.0713RMS/mean0.0277 versus exactlyzero with checking disabled. Speaker checking is now off by default. First Speakers use offers one short Run/Skip prompt; Settings retains Run speaker check. The manual check starts an idle graph only for the requested test, returns to idle afterwards, caches a confident result for later singing, and can be cancelled without stopping a newer session. AEC captures now reject on Stop instead of hanging. The AEC algorithm is unchanged.
+Sustained level tests passed on injected and fake-microphone routes: speaker/headphone mean ratios1.042 and1.183 respectively, both above0.5; gates open throughout measured voice. This does not reproduce a25dB attenuation policy on live. Startup noise test with checking off emittedzero during the measured quiet window. Physical singing in a room remains unverified until Jacob records a take.

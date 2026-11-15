@@ -340,7 +340,7 @@ class HarmonySinger {
         this.echoMode = ['canceller', 'browser', 'none'].includes(echoParam) ? echoParam : 'canceller';
         if (this.echoMode === 'canceller' && !cancellerAvailable) this.echoMode = 'browser';
         this.cancellerAvailable = cancellerAvailable;
-        this.speakerCheck = this.params.get('check') !== '0';   // one-second noise burst at start to measure the speakers
+        this.speakerCheck = this.params.get('check') === '1';   // one-second noise burst at start to measure the speakers
         this.aecNode = null;
         this.aecStats = null;
         this.aecPending = {};
@@ -1039,6 +1039,27 @@ class HarmonySinger {
 
     // ---------- Audio graph ----------
 
+    async runSpeakerCheckNow(){
+        if(this.starting)throw new Error('Wait for audio to start, then run the check');
+        if(!this.speakerMode)throw new Error('Choose Speakers before running the check');
+        if(this.echoMode!=='canceller'||!this.cancellerAvailable)throw new Error('Select Harmony echo removal for the speaker check');
+        if(this.calibrating||this.manualCheckBusy)return;
+        this.manualCheckBusy=true;
+        const wasRunning=this.isRunning;let node=null;
+        try{
+            if(!wasRunning){const automatic=this.speakerCheck;this.speakerCheck=false;try{await this.start();}finally{this.speakerCheck=automatic;}}
+            node=this.aecNode;
+            if(!node)throw new Error('The echo canceller could not start');
+            this.calibrating=true;this.gateGain.gain.rampTo(0,.03);this.updateUI();
+            await this.runSpeakerCheck();
+            if(this.aecNode===node&&this.checkResult?.ok&&this.checkResult.confident){const key=this.audioContext.sampleRate+':'+this.outputLabel+':'+(this.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId||'synthetic');this.speakerChecks.set(key,{...this.checkResult});}
+        }finally{
+            this.manualCheckBusy=false;
+            if(node&&this.aecNode===node){this.calibrating=false;if(!wasRunning)this.stop();else this.updateUI();}
+            else if(!wasRunning&&!node&&this.isRunning)this.stop();
+        }
+    }
+
     async readOutputLabel(){try{const outputs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput');return (outputs.find(d=>d.deviceId==='default')||outputs[0])?.label||'Not exposed by browser';}catch(_){return 'Not exposed by browser';}}
 
     async toggle() {
@@ -1373,7 +1394,7 @@ class HarmonySinger {
     onAecMessage(m) {
         if (m.type === 'stats') { this.aecStats = m; return; }
         const done = m.id && this.aecPending[m.id];
-        if (done) { delete this.aecPending[m.id]; done(m); }
+        if (done) { delete this.aecPending[m.id]; clearTimeout(done.timer); done.resolve(m); }
     }
 
     aecRequest(msg, timeoutMs = 3000) {
@@ -1381,11 +1402,11 @@ class HarmonySinger {
         return new Promise((resolve, reject) => {
             if (!node) { reject(new Error('echo canceller is not running')); return; }
             const id = ++this.aecSeq;
-            this.aecPending[id] = resolve;
-            node.port.postMessage({ ...msg, id });
-            setTimeout(() => {
+            const pending={resolve,reject,timer:null};this.aecPending[id]=pending;
+            pending.timer=setTimeout(() => {
                 if (this.aecPending[id]) { delete this.aecPending[id]; reject(new Error('echo canceller did not answer')); }
             }, timeoutMs);
+            node.port.postMessage({ ...msg, id });
         });
     }
 
@@ -1397,7 +1418,7 @@ class HarmonySinger {
     async runSpeakerCheck() {
         const HEC = window.HarmonyEchoCanceller, ctx = this.audioContext, node = this.aecNode, sr = ctx.sampleRate;
         const result = { ok: false, confident: false, delayMs: null, couplingDb: null, attempts: 0, guessMs: Math.round(1000 * (this.aecDelayGuess || 0) / sr) };
-        const sources = [];
+        const sources = [];this.activeProbeSources=sources;
         const alive = () => this.isRunning && this.aecNode === node;
         const playProbe = (seconds) => {
             const probe = HEC.makeProbe(sr, seconds, 0.07);
@@ -1463,6 +1484,7 @@ class HarmonySinger {
         } catch (err) {
             result.error = String(err && err.message);
         } finally {
+            if(this.activeProbeSources===sources)this.activeProbeSources=null;
             sources.forEach(src => { try { src.stop(); } catch (e) { /* ignore */ } try { src.disconnect(); } catch (e) { /* ignore */ } });
             if (this.aecNode === node && node) {
                 this.checkResult = result;
@@ -1699,6 +1721,8 @@ class HarmonySinger {
         }
         this.aecNode = null;
         this.aecStats = null;
+        for(const pending of Object.values(this.aecPending)){clearTimeout(pending.timer);pending.reject(new Error('Speaker check cancelled'));}
+        for(const src of this.activeProbeSources||[]){try{src.stop();src.disconnect();}catch(_){}}this.activeProbeSources=null;
         this.aecPending = {};
         for (const n of [this.refDelay, this.monoNode, this.outTap, this.nearTap, ...(this.roomNodes || [])]) {
             if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } }
