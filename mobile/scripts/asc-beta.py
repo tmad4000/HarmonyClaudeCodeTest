@@ -24,14 +24,19 @@ def main():
  if build['relationships']['app']['data']['id']!=aid or build['attributes']['processingState']!='VALID' or build['attributes'].get('buildAudienceType')!='APP_STORE_ELIGIBLE':raise RuntimeError('Exact valid external-eligible Harmony build required')
  if args.command=='prepare':
   allowed={'World Issue Tracker','People','Breath Rate Tracker','Box Breathing','Helm','Open Recordings'}
-  contact=None;source=None
-  for candidate in asc.list('/v1/apps?limit=200'):
-   if candidate['attributes']['name'] not in allowed:continue
-   try:d=asc.api('/v1/apps/'+candidate['id']+'/betaAppReviewDetail')['data']['attributes']
-   except RuntimeError:continue
-   keys=['contactFirstName','contactLastName','contactEmail','contactPhone']
-   if all(isinstance(d.get(k),str) and d[k].strip() for k in keys):contact={k:d[k] for k in keys};source=candidate['attributes']['name'];break
-  if contact is None:raise RuntimeError('No complete approved IdeaFlow beta-review contact found; ask root')
+  saved=json.loads((root/'build/beta-contact.json').read_text())
+  if saved['sourceApp'] not in allowed:raise RuntimeError('Contact source app not authorized')
+  source_app=asc.api('/v1/apps/'+saved['sourceAppId'])['data']
+  if source_app['attributes']['name']!=saved['sourceApp']:raise RuntimeError('Contact source app changed')
+  proof=saved['approvedExternalReview']
+  review=asc.api('/v1/betaAppReviewSubmissions/'+proof['reviewId'])['data']
+  if review['attributes']['betaReviewState']!='APPROVED' or review['relationships']['build']['data']['id']!=proof['buildId']:raise RuntimeError('Contact source external approval not verified')
+  reviewed_build=asc.api('/v1/builds/'+proof['buildId']+'?include=app')['data']
+  if reviewed_build['relationships']['app']['data']['id']!=saved['sourceAppId']:raise RuntimeError('Approved source build belongs to another app')
+  current=asc.api('/v1/apps/'+saved['sourceAppId']+'/betaAppReviewDetail')['data']['attributes']
+  keys=['contactFirstName','contactLastName','contactEmail','contactPhone']
+  if not all(isinstance(current.get(k),str) and current[k].strip() for k in keys):raise RuntimeError('Complete existing contact no longer available')
+  contact={k:current[k] for k in keys};source=saved['sourceApp']
   detail=asc.api('/v1/apps/'+aid+'/betaAppReviewDetail')['data']
   asc.api('/v1/betaAppReviewDetails/'+detail['id'],'PATCH',{'data':{'type':'betaAppReviewDetails','id':detail['id'],'attributes':dict(contact,demoAccountRequired=False,notes=NOTES)}})
   upsert(asc,'betaAppLocalizations',asc.list('/v1/apps/'+aid+'/betaAppLocalizations?limit=200'),{'description':DESCRIPTION,'feedbackEmail':contact['contactEmail'],'privacyPolicyUrl':'https://harmony.jacobcole.net/privacy','marketingUrl':'https://harmony.jacobcole.net/'},{'app':{'data':{'type':'apps','id':aid}}})
