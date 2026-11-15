@@ -606,6 +606,7 @@
             this.hotPow = o.hotPow ?? 0.126;        // speaker feed above -9 dBFS RMS for a while = something is wrong
             this.coupling = o.coupling ?? 1;        // speaker -> mic power gain; 1 (0 dB) until measured
             this.couplingKnown = false;
+            this.couplingSource = 'unknown';
             this.appGain = o.appGain ?? 1;          // speaker feed power per unit of cleaned-mic power at trim 1
             this.reset();
         }
@@ -625,25 +626,31 @@
 
         /** Tell the controller what the speaker check measured (power gain, e.g. 10^(dB/10)). */
         setCoupling(powerGain) {
-            if (powerGain > 0 && isFinite(powerGain)) { this.coupling = powerGain; this.couplingKnown = true; }
+            if (powerGain > 0 && isFinite(powerGain)) { this.coupling = powerGain; this.couplingKnown = true; this.couplingSource = 'speaker-check'; }
         }
 
         /**
-         * @param {object} s  { now: ms, voiced: bool, stats: canceller stats | null }
+         * @param {object} s  { now: ms, voiced: bool, stats: canceller stats | null,
+         *   independentNear?: bool, nearSeeded?: bool, playedAmbiguous?: bool }
+         * independentNear is a separately established
+         *   quiet-reference seed/played-pitch continuity decision, never just VAD.
          * @returns {{ gateOpen: boolean, trim: number, nearOk: boolean, residualRatio: number }}
          */
         update(s) {
-            const now = s.now, st = s.stats;
+            const now = s.now, st = s.stats, explicitEvidence = typeof s.independentNear === 'boolean';
             const dt = this.lastUpdate === null ? 0 : Math.min(0.25, Math.max(0, (now - this.lastUpdate) / 1000));
             this.lastUpdate = now;
-            let nearOk = true;
+            let nearOk = true, powerNearOk = true;
             if (st) {
                 // Keep our own estimate of how loud the speakers are at the mic, from moments when the
                 // canceller is converged; it is what we fall back on when the canceller is not.
-                if (st.adapted && st.leak < 0.1 && st.refPow > 1e-7 && st.echoPow > 0) {
+                if (st.adapted && (!explicitEvidence || !st.suspect) && st.leak < 0.1 && st.refPow > 1e-7 && st.echoPow > 0) {
                     const c = st.echoPow / st.refPow;
-                    this.coupling += (c - this.coupling) * Math.min(1, dt * (this.couplingKnown ? 0.5 : 4));
+                    // The first observation is a measurement, not a blend with an
+                    // unmeasured 0 dB prior that would immediately become "known".
+                    this.coupling = !explicitEvidence ? this.coupling + (c - this.coupling) * Math.min(1, dt * (this.couplingKnown ? 0.5 : 4)) : this.couplingKnown ? this.coupling + (c - this.coupling) * Math.min(1, dt * 0.5) : c;
                     this.couplingKnown = true;
+                    this.couplingSource = 'learned-aec';
                 }
                 // Residual echo left in the cleaned mic = (what the speakers put into the mic) x (the part
                 // the canceller misses). An unconverged canceller misses all of it.
@@ -651,7 +658,11 @@
                 const leak = trusted ? Math.max(st.leak, this.leakFloor) : 1;
                 const residual = leak * Math.max(this.coupling * st.refPow, trusted ? st.echoPow : 0);
                 const near = Math.max(st.outPow - residual, 0);
-                nearOk = st.outPow > (1 + this.nearMargin) * residual + 1e-9;
+                powerNearOk = st.outPow > (1 + this.nearMargin) * residual + 1e-9;
+                // The unmeasured prior remains conservative for level protection,
+                // but cannot veto independent near-end evidence as if calibrated.
+                // Legacy callers without an evidence decision keep the power test.
+                nearOk = powerNearOk;
                 this.residualRatio = residual / (near + 1e-10);
                 if (s.voiced && nearOk) this.nearRef = Math.max(st.outPow, this.nearRef * Math.exp(-dt / 2));
                 const singerStillThere = s.voiced && st.outPow > 0.3 * this.nearRef && this.nearRef > 0;
@@ -661,7 +672,7 @@
                     this.trim *= Math.pow(10, 4 * dt / 20);              // recover 4 dB/s
                 }
                 // How much speaker level the app makes out of a unit of singer, measured while all is well.
-                if (trusted && this.gateOpen && s.voiced && nearOk && near > 1e-7) {
+                if (trusted && (this.couplingKnown || !explicitEvidence) && this.gateOpen && s.voiced && powerNearOk && near > 1e-7) {
                     const t = Math.max(this.minTrim, Math.min(this.trim, this.bound));
                     const a = st.refPow / (near * t * t);
                     if (isFinite(a) && a > 0) this.appGain += (Math.min(a, 100) - this.appGain) * Math.min(1, dt * 3);
@@ -674,12 +685,18 @@
                 this.hotMs = st.refPow > this.hotPow ? this.hotMs + dt * 1000 : 0;
                 if (this.hotMs > 300) { this.trim *= 0.5; this.hotMs = 0; this.emergencies++; this.emergencyUntil=now+4000; }
             }
+            if (!this.couplingKnown && explicitEvidence) nearOk = s.independentNear || (!!st && s.nearSeeded === true && s.playedAmbiguous === false && powerNearOk);
+            // A learned model alone cannot bootstrap a take from delayed echo of
+            // reference playback. Establish the first quiet near-end seed first.
+            if (explicitEvidence && s.nearSeeded !== true && !s.independentNear) nearOk = false;
             this.trim = Math.min(1, Math.max(this.minTrim, this.trim));
             if (!st) { this.trim = 1; this.bound = 1; }
             let applied = Math.max(this.minTrim, Math.min(this.trim, this.bound));
             if (this.mode === 'speakers') {
                 const leak=st&&st.adapted&&!st.suspect?Math.max(st.leak,this.leakFloor):1;
-                const loopPower=st?leak*this.coupling*this.appGain:0;
+                // Unknown digital-to-acoustic gain is not a measured emergency.
+                // Keep the absolute hot-output safeguard even before calibration.
+                const loopPower=st&&(this.couplingKnown||!explicitEvidence)?leak*this.coupling*this.appGain:0;
                 if(loopPower>0.5)this.emergencyActive=true;
                 else if(loopPower<0.25)this.emergencyActive=false;
                 const target=this.emergencyActive?Math.max(0.5,Math.min(1,Math.sqrt(0.5/Math.max(loopPower,1e-12)))):1;
@@ -691,7 +708,9 @@
             this.nearOk = nearOk;
             if (s.voiced && nearOk) this.lastNearAt = now;
             this.gateOpen = now - this.lastNearAt < this.holdMs;
-            return { gateOpen: this.gateOpen, trim: applied, nearOk, residualRatio: this.residualRatio };
+            return { gateOpen: this.gateOpen, trim: applied, nearOk, powerNearOk, residualRatio: this.residualRatio,
+                residualConfidence: this.couplingKnown ? this.couplingSource : 'unknown', couplingSource: this.couplingSource,
+                loopGainKnown:this.couplingKnown,emergencyActive:this.emergencyActive,hotEmergency:now<this.emergencyUntil };
         }
     }
 
