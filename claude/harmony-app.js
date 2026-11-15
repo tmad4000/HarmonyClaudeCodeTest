@@ -367,7 +367,7 @@ class HarmonySinger {
         this.prevChordDeg = null;
         this.voicePresent = false;
         this.lastVoiceSeen = 0;
-        this.harmonyPosition = 'both';
+        this.harmonyPosition = 'above';
         this.choirVoices = { soprano: true, alto: true, tenor: true, bass: true };
 
         // Pitch tracking
@@ -1377,8 +1377,8 @@ class HarmonySinger {
             const hint=document.getElementById('protectionHint');
             if(hint)hint.hidden=!(this.checkResult?.couplingDb>-6&&!this.extraProtection);
             if (this.isRunning && this.params.get('record') === '1') this.startRecording();
-            if (this.isRunning && this.debugNoticeAccepted) window.harmonyDebug?.start(this);
-            if(this.isRunning&&this.takeUserStarted)window.harmonyTakes?.start(this);
+            if(this.isRunning&&this.takeUserStarted){await window.harmonyTakes?.start(this);checkStart();}
+            if (this.isRunning && this.debugNoticeAccepted) window.harmonyDebug?.start(this,{linkedSaveId:window.harmonyTakes?.active?.row.id});
         } catch (err) {
             if(generation!==this.startGeneration){this.stop();return;}
             console.error('Error starting:', err);

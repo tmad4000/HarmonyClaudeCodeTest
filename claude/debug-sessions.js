@@ -21,20 +21,20 @@
             document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='m'&&!/input|textarea|select/i.test(e.target.tagName))this.event?.({type:'mark',t:Math.round(performance.now()),label:'Problem moment'});});
         }
         status(text) { document.querySelector('[data-status]').textContent = text; }
-        rows(){return this.store.rows();}
-        write(row,remove,chunk){return this.store.write(row,remove,chunk);}
-        audio(row){return this.store.audio(row);}
+        async chunks(id){const db=await this.db;return new Promise((resolve,reject)=>{const r=db.transaction('chunks').objectStore('chunks').index('session').getAll(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
+        async rows(){const rows=await this.store.rows();for(const row of rows){if(row.eventChunks){const parts=(await this.chunks(row.id)).filter(c=>c.kind==='events').sort((a,b)=>a.index-b.index);row.events=[];for(const c of parts){for(const line of (await c.blob.text()).split('\n'))if(line)try{row.events.push(JSON.parse(line));}catch(_){}}}}return rows;}
+        write(row,remove,chunk){return this.store.write(row.eventChunks?{...row,events:[]}:row,remove,chunk);}
+        async audio(row){if(row.linkedSaveId){const store=window.harmonyTakes?.store;if(!store)throw new Error('Save audio unavailable');const saved=(await store.rows()).find(r=>r.id===row.linkedSaveId);if(!saved)throw new Error('Linked save was deleted');return store.audio(saved);}return this.store.audio(row);}
         async prune(){const result=await this.store.prune();if(result.full&&this.recorder)this.limitAudio('storage full: unpin or export · events continue');if(this.activeId&&!(await this.rows()).some(r=>r.id===this.activeId))throw new Error('Not saving · session storage limit');return result;}
-        async startEventsOnly(h,generation) {
+        async startEventsOnly(h,generation,linkedSaveId=null) {
             if(!this.enabled||!h.isRunning||generation!==this.generation)return;
-            const id=crypto.randomUUID(),events=h.getLog().slice(-100).map(e=>JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v))),row={id,started:Date.now(),kind:'events',settings:h.snapshotSettings(),browser:navigator.userAgent,platform:navigator.platform,version:document.querySelector('meta[name="harmony-version"]')?.content,events};
-            this.activeId=id;this.latestId=id;
-            const persist=async()=>{try{await this.write({...row,events:events.slice(),bytes:new Blob([JSON.stringify(events)]).size});}catch(_){if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage unavailable');}};
-            this.event=e=>{if(events.length<5000)events.push(JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v)));};
-            this.flush=()=>{if(this.activeId!==id)row.ended=Date.now();return persist();};this.eventTimer=setInterval(persist,5000);
-            await persist();this.status('storage full: unpin or export · events continue');
+            const sanitize=e=>JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v)),id=crypto.randomUUID(),row={id,started:Date.now(),kind:'events',eventChunks:true,linkedSaveId,mimeType:linkedSaveId?window.harmonyTakes?.active?.row.mimeType:undefined,audioLayout:linkedSaveId?'shared save mix':'events only',settings:h.snapshotSettings(),browser:navigator.userAgent,platform:navigator.platform,version:document.querySelector('meta[name="harmony-version"]')?.content,events:[],bytes:0};
+            this.activeId=id;this.latestId=id;let pending=h.getLog().slice(-100).map(sanitize),index=0,queue=Promise.resolve();
+            const persist=()=>{const batch=pending;pending=[];if(this.activeId!==id)row.ended=Date.now();if(!batch.length&&!row.ended)return queue;const blob=new Blob([batch.map(e=>JSON.stringify(e)).join('\n')+'\n'],{type:'application/x-ndjson'});row.bytes+=blob.size;const snapshot={...row},chunk={id:id+':events:'+index,session:id,index:index++,kind:'events',blob};queue=queue.catch(()=>{}).then(()=>this.write(snapshot,false,chunk)).catch(()=>{if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage unavailable');});return queue;};
+            this.event=e=>{if(pending.length<2000)pending.push(sanitize(e));};this.flush=persist;this.eventTimer=setInterval(persist,5000);
+            await persist();this.status(linkedSaveId?'Debug diagnostics on · audio shared with Saves':'storage full: events continue');
         }
-        async start(h) {
+        async start(h,options={}) {
             if(this.skip)return;
             if (!this.enabled || this.recorder || this.starting) return;
             const generation = ++this.generation; this.starting = true;this.audioLimited=false;
@@ -42,7 +42,7 @@
             try {
                 await this.db;
                 const storage=await this.prune();
-                if(storage.full){await this.startEventsOnly(h,generation);return;}
+                if(storage.full||options.linkedSaveId){await this.startEventsOnly(h,generation,options.linkedSaveId||null);return;}
                 if (!this.enabled || !h.isRunning || generation !== this.generation) return;
                 const source = h.micSource, limiter = h.limiter;
                 const ctx = h.audioContext, dest = ctx.createMediaStreamDestination(), merger = ctx.createChannelMerger(2);
@@ -92,13 +92,13 @@
             if (!rows.length) list.textContent = 'No saved sessions on this browser.';
             for (const r of rows) {
                 const row = document.createElement('p'); row.textContent = new Date(r.started).toLocaleString()+' · '+(r.settings.speakerMode?'Speakers':'Headphones')+' · '+Math.round(((r.audioEnded||Date.now())-r.started)/1000)+'s · '+Math.round(r.bytes/1024)+' KB ';
-                for (const [label,getBlob,ext] of [['Audio',()=>this.audio(r),r.mimeType?.includes('mp4')?'m4a':'webm'],['Telemetry',()=>new Blob([JSON.stringify({...r,blob:undefined})],{type:'application/json'}),'json']]) {
+                for (const [label,getBlob,ext] of [...(r.kind!=='events'||r.linkedSaveId?[['Audio',()=>this.audio(r),r.mimeType?.includes('mp4')?'m4a':'webm']]:[]),['Telemetry',()=>new Blob([JSON.stringify({...r,blob:undefined})],{type:'application/json'}),'json']]) {
                     const btn = document.createElement('button'); btn.type='button'; btn.textContent=label;
                     btn.onclick=async()=>{ const blob=await getBlob(); const a=document.createElement('a'), url=URL.createObjectURL(blob); a.href=url;a.download=`harmony-${r.id}.${ext}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000); };row.append(btn);
                 }
                 const add=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>Promise.resolve(fn()).catch(e=>this.status(e.message));row.append(b);};
                 const metrics={...this.metrics(r.events||[]),...(r.audioMetrics||{})};const detail=document.createElement('span');detail.textContent=' · '+JSON.stringify(metrics);row.append(detail);
-                add('Analyze audio',async()=>{const ctx=new AudioContext();try{const data=await ctx.decodeAudioData(await (await this.audio(r)).arrayBuffer());if(data.numberOfChannels<2)throw new Error('Stereo capture required');const audioMetrics=HarmonySessionMetrics.analyzeEnvelope(data.getChannelData(0),data.getChannelData(1),data.sampleRate);if(r.id!==this.activeId&&!this.finalizing.has(r.id))await this.write({...r,audioMetrics});await this.review();}finally{await ctx.close();}});
+                if(!r.linkedSaveId&&r.kind!=='events')add('Analyze audio',async()=>{const ctx=new AudioContext();try{const data=await ctx.decodeAudioData(await (await this.audio(r)).arrayBuffer());if(data.numberOfChannels<2)throw new Error('Stereo capture required');const audioMetrics=HarmonySessionMetrics.analyzeEnvelope(data.getChannelData(0),data.getChannelData(1),data.sampleRate);if(r.id!==this.activeId&&!this.finalizing.has(r.id))await this.write({...r,audioMetrics});await this.review();}finally{await ctx.close();}});
                 add('Copy summary',()=>navigator.clipboard.writeText(JSON.stringify({date:new Date(r.started).toISOString(),version:r.version,settings:r.settings,metrics},null,2)));
                 if(r.id!==this.activeId&&!this.finalizing.has(r.id))add(r.keep?'Unkeep':'Keep',async()=>{await this.write({...r,keep:!r.keep});await this.review();});
                 add('Export session',async()=>{const blob=await this.audio(r);const data=await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.readAsDataURL(blob);});const url=URL.createObjectURL(new Blob([JSON.stringify({...r,metrics,audio:data,blob:undefined})],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`harmony-${r.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);});
