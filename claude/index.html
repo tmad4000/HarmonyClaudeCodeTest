@@ -6,6 +6,8 @@
     <title>Harmony Singer - AI Backup Vocals</title>
     <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
     <script src="vendor/SignalsmithStretch.js"></script>
+    <script src="echo-canceller.js"></script>
+    <meta name="harmony-version" content="2026-11-15-aec-debug-1">
     <style>
         * {
             margin: 0;
@@ -414,8 +416,26 @@
         }
         .select-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
         .select-row label { font-size: 0.85rem; opacity: 0.8; }
-        .select-row select { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: inherit; font-size: 0.95rem; }
+        .select-row select { min-width:0; max-width:100%; flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.3); color: inherit; font-size: 0.95rem; }
+        .release-info { margin-top: 10px; font-size: 0.8rem; opacity: 0.9; }
+        .release-info button { color: inherit; font: inherit; background: none; border: 0; padding: 3px; text-decoration: underline; cursor: pointer; }
+        .release-info button:focus-visible { outline: 2px solid white; outline-offset: 3px; }
         .key-status { margin-top: 8px; font-size: 0.85rem; opacity: 0.85; }
+        header {position:relative;padding-top:26px;}
+        .release-info {position:absolute;right:0;top:0;font-size:11px!important;margin:0!important;text-align:right;}
+        .release-info details {display:inline-block;position:relative;}
+        #buildDetail {position:absolute;top:100%;right:0;min-width:220px;padding:10px;background:#16213e;border:1px solid #56637d;border-radius:8px;z-index:4;}
+        #debugChip {position:absolute;right:0;top:-18px;border:0;background:none;color:#a6afbd;font-size:11px;padding:8px;cursor:pointer;display:flex;align-items:center;gap:5px;}
+        #debugChip i {width:6px;height:6px;border-radius:50%;border:1px solid #a6afbd;}
+        #debugChip.armed i {background:#bc6d78;border:0;opacity:.65;} #debugChip.recording i {background:#e5676b;opacity:1;}#debugChip.failure i{background:#e2b04f;}
+        #debugChip span{display:none}#debugChip.recording span{display:inline}
+        #firstDebugNotice {font-size:11px;color:#a6afbd;margin-top:8px;}
+        #firstDebugNotice button {font:inherit;color:inherit;background:none;border:0;text-decoration:underline;padding:4px;cursor:pointer;}
+        #debugDialog {background:#16213e;color:white;border:1px solid #56637d;border-radius:12px;padding:20px;max-width:620px;width:calc(100% - 32px);max-height:85vh;margin:auto;overflow:auto;}
+        #debugDialog::backdrop{background:rgb(0 0 0/.6)}#debugDialog button{margin:5px;padding:6px 10px;cursor:pointer;}#debugDialog pre{font-size:11px;white-space:pre-wrap;max-height:220px;overflow:auto;}#debugDialog [data-sessions]{overflow-wrap:anywhere}
+        #debugDialog .dialog-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}#debugDialog .dialog-head h2{font-size:18px;margin:0}#debugDialog p{font-size:12px;line-height:1.5;margin:10px 0}
+        .speaker-options{font-size:12px;margin-top:8px}.speaker-options label{display:block;margin:8px}.speaker-options select{max-width:260px}.speaker-options summary{cursor:pointer}
+        [hidden]{display:none!important}
     </style>
 </head>
 <body>
@@ -423,20 +443,25 @@
         <header>
             <h1>Harmony Singer</h1>
             <p class="subtitle">Your AI Backup Vocalist & Choir</p>
+            <button id="debugChip" type="button" aria-label="Debug recording details"><i aria-hidden="true"></i><span>rec</span></button>
+            <div class="release-info"><details><summary><time id="buildTime">Build time unavailable</time></summary><span id="buildDetail"></span></details><span id="releaseStatus" aria-live="polite"></span> <button id="refreshVersion" type="button">Refresh app</button></div>
+            <p style="margin-top: 12px; font-size: 0.9rem;"><a href="neural-experiment.html" style="color: #fff; text-decoration: underline; text-underline-offset: 3px;">Explore the neural harmony experiment →</a></p>
         </header>
 
         <div class="start-container">
             <button id="startBtn" class="btn btn-primary">Start Singing</button>
             <div id="status" class="status idle">Click to begin</div>
+            <p id="firstDebugNotice">Debug: mic + app audio saved here <button id="debugDetails" type="button">Details</button><button id="dismissDebugNotice" type="button" aria-label="Dismiss notice">×</button></p>
         </div>
 
         <div class="speaker-mode-container">
             <div class="speaker-mode-toggle">
                 <span class="speaker-mode-label">Using Headphones</span>
-                <div class="toggle" id="speakerModeToggle"></div>
+                <div class="toggle" id="speakerModeToggle" role="switch" tabindex="0" aria-label="Using speakers" aria-checked="false"></div><input type="hidden" id="outputPosition" value="0"><span id="outputProfileLabel" hidden></span>
                 <span class="speaker-mode-label">Using Speakers</span>
             </div>
             <div id="speakerModeStatus" class="speaker-mode-status">Headphone Mode</div>
+            <details class="speaker-options"><summary>Speaker options</summary><div id="echoModeRow"><label>Echo removal <select id="echoModeSelect"><option value="canceller">Harmony canceller</option><option value="browser">Browser echo cancellation</option><option value="none">Off</option></select></label></div><label><input id="extraProtection" type="checkbox"> Extra feedback protection (loud rooms; lowers harmony level)</label><label><input id="speakerCheckToggle" type="checkbox" checked> Check speakers on first start (a soft one-second sound)</label><p id="speakerCheckStatus"></p><button id="protectionHint" type="button" hidden>Strong speaker pickup · enable extra protection</button></details>
             <div id="guardStatus" class="speaker-mode-status"></div>
             <p class="speaker-mode-hint">Laptop open, no headphones? Switch to Speakers: echo cancellation, your own voice is not played back, harmonies only sound while you sing, and a feedback guard notches out any howl it hears building up.</p>
         </div>
@@ -684,6 +709,13 @@
         </div>
     </div>
 
+    <dialog id="debugDialog" aria-labelledby="debugTitle"><div class="dialog-head"><h2 id="debugTitle">Debug sessions</h2><button type="button" id="closeDebug" aria-label="Close debug details">×</button></div><section id="debugSessions"><label><input type="checkbox" checked> Record debug sessions on this device</label><p>Microphone, app output and technical readings stay in this browser. Nothing is uploaded.</p><details><summary>Storage and privacy</summary><p>Anyone using this browser profile can review these takes. Unkept sessions expire after14 days when this app opens and are limited to100MB, oldest first. Keep prevents automatic deletion. If kept takes fill storage, audio pauses and lightweight events continue. Audio is limited to10minutes/20MB per take; events continue.</p></details><p data-status role="status"></p><button type="button" data-mark>Mark problem (M)</button><button type="button" data-skip>Start without recording</button><button type="button" data-review>Saved sessions</button><div data-sessions></div></section></dialog>
     <script src="harmony-app.js"></script>
+    <script src="release-time.js"></script>
+    <script src="app-features.js"></script>
+    <script src="private-session-store.js"></script>
+    <script src="session-metrics.js"></script>
+    <script src="debug-sessions.js"></script>
+    <script src="debug-ui.js"></script>
 </body>
 </html>

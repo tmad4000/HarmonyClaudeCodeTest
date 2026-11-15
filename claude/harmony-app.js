@@ -6,14 +6,20 @@
  * Harmony: key-aware. The detected note is mapped onto the selected scale and each harmony voice
  *          is shifted by a *scale-degree* interval, so a "third" is major or minor depending on
  *          where you are in the key (like a real backup singer). Chromatic = fixed semitones.
- * Speaker mode (laptop open, no headphones): browser echo cancellation + dry monitor muted +
- *          harmony gate (only sings while you sing) + high/low-pass + limiter + an automatic
- *          feedback guard that spots howling spectral lines and drops notch filters on them.
+ * Speaker mode (laptop open, no headphones): the microphone is taken raw and our own reference
+ *          echo canceller (echo-canceller.js) subtracts the exact speaker feed from it; a loop
+ *          controller gates the harmonies on the singer (not on leftover echo) and trims level only
+ *          when the measured loop needs it. Dry monitor muted, mono speaker feed, high/low-pass,
+ *          limiter, and the feedback guard (notches on howling lines) remain as backstops.
+ *          ?echo=browser restores the previous browser echo cancellation; ?echo=none uses neither.
  * Debug:   optional audio recording (output, or input/output as L/R) and a JSON event log.
  *
  * Agent-testable: ?input=tone&freq=220&autostart=1 replaces the microphone with a synthetic
  * sawtooth; ?howl=3000 adds a rising pure tone to provoke the feedback guard; then call
  * window.harmonySinger.measureVoices() / measureGuard(hz) / getLog(). See test/verify_harmony.py.
+ * ?room=1 (&roomGain=&roomDelayMs=&roomRt60=&roomDrive=) feeds the speaker signal back into the
+ * test input through a simulated room, &voice=1 makes the test singer vowel-like with vibrato;
+ * measureLoop() / setTestLevel() / setRoom() drive it. See test/speaker_loop.py.
  */
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -77,7 +83,7 @@ const GUARD = {
     sustainFrames: 12,     // ... persistent for ~1.2 s
     releaseMs: 20000,      // let a notch go after this long without re-detection
     duckMs: 2000,          // duck harmonies briefly when a howl is caught
-    analyseEveryFrames: 6  // ~100 ms at 60 fps
+    analyseEveryFrames: 3  // ~100 ms at the bounded30Hz pitch-control cadence
 };
 
 // Instrumental backing
@@ -318,8 +324,40 @@ class HarmonySinger {
         this.reverbAmount = 0.3;
         this.chorusAmount = 0.3;
         this.smoothing = 0.5;
-        this.speakerMode = this.params.get('speaker') === '1';
-        this.backing = ['voice', 'piano', 'pad', 'voice+piano'].includes(this.params.get('backing')) ? this.params.get('backing') : 'voice';
+        this.speakerMode = this.params.get('speaker') !== '0';
+        this.outputPosition = this.speakerMode ? 1 : 0;
+        this.extraProtection = false;
+        this.speakerChecks=new Map();this.outputDefaultPending=!this.params.has('speaker');
+        try{const saved=JSON.parse(localStorage.getItem('harmony-singer-settings-v1')||'{}');if(typeof saved.speaker==='boolean'||[0,1].includes(saved.outputProtection))this.outputDefaultPending=false;}catch(_){}
+        navigator.mediaDevices?.addEventListener?.('devicechange',async()=>{this.speakerChecks.clear();const label=await this.readOutputLabel();this.logEvent('device-change',{outputLabel:label});if(!this.speakerMode&&/speaker|built.in|internal/i.test(label)&&!/headphone|airpod|bud|earphone/i.test(label)){this.setOutputPosition(1);this.onOutputSafetyChange?.();}});
+        // How speaker mode deals with its own sound coming back into the mic:
+        //   canceller - our reference echo canceller (echo-canceller.js): subtracts the known playback,
+        //               never turns the microphone down. Default.
+        //   browser   - the browser's telephony echo cancellation + noise suppression (previous behaviour).
+        //   none      - gate + feedback guard only.
+        const cancellerAvailable = typeof window.HarmonyEchoCanceller === 'object' && typeof AudioWorkletNode === 'function';
+        const echoParam = this.params.get('echo');
+        this.echoMode = ['canceller', 'browser', 'none'].includes(echoParam) ? echoParam : 'canceller';
+        if (this.echoMode === 'canceller' && !cancellerAvailable) this.echoMode = 'browser';
+        this.cancellerAvailable = cancellerAvailable;
+        this.speakerCheck = this.params.get('check') !== '0';   // one-second noise burst at start to measure the speakers
+        this.aecNode = null;
+        this.aecStats = null;
+        this.aecPending = {};
+        this.aecSeq = 0;
+        this.aecFrozen = false;
+        this.loopControl = cancellerAvailable ? new window.HarmonyEchoCanceller.SpeakerLoopControl({mode:'speakers',holdMs:this.extraProtection ? 600 : 800,minTrim:0.25,backoffDb:3,trimHigh:this.extraProtection ? 0.1 : 0.25,trimLow:this.extraProtection ? 0.07 : 0.17}) : null;
+        this.speakerTrim = 1;
+        this.calibrating = false;
+        this.cancellerFailed = false;
+        this.checkResult = null;
+        this.trimGain = null;
+        this.monoNode = null;
+        this.refDelay = null;
+        this.outTap = null;
+        this.roomNodes = [];
+        this.testGain = null;
+        this.backing =['voice', 'piano', 'pad', 'voice+piano'].includes(this.params.get('backing')) ? this.params.get('backing') : 'voice';
         this.backingStyle = this.params.get('backingStyle') === 'chords' ? 'chords' : 'voices';
         this.instruments = {};        // kind -> Tone instrument
         this.instGain = null;
@@ -370,6 +408,7 @@ class HarmonySinger {
 
         this.noteStrings = NOTE_NAMES;
         this.initUI();
+        document.addEventListener('visibilitychange',()=>this.logEvent('visibility',{hidden:document.hidden}));
 
         if (this.params.get('autostart') === '1') {
             setTimeout(() => this.start(), 50);
@@ -381,6 +420,7 @@ class HarmonySinger {
     logEvent(type, data) {
         const entry = { t: Math.round(performance.now()), type, ...(data || {}) };
         this.log.push(entry);
+        window.harmonyDebug?.event?.(entry);
         if (this.log.length > this.logLimit) this.log.splice(0, this.log.length - this.logLimit);
         if (this.verboseLog) console.log('[harmony]', type, data || '');
         return entry;
@@ -401,10 +441,12 @@ class HarmonySinger {
     snapshotSettings() {
         return {
             engine: this.engine, mode: this.currentMode, scale: this.currentScale, keyRoot: this.keyRoot,
-            detectedKey: this.detectedKey, speakerMode: this.speakerMode, harmonyVolume: this.harmonyVolume,
+            detectedKey: this.detectedKey, speakerMode: this.speakerMode, echoMode: this.echoMode, speakerCheck: this.speakerCheck,
+            checkResult: this.checkResult, speakerTrim: this.speakerTrim, harmonyVolume: this.harmonyVolume,
             dryVolume: this.dryVolume, reverbAmount: this.reverbAmount, chorusAmount: this.chorusAmount,
             smoothing: this.smoothing, harmonyPosition: this.harmonyPosition, choirVoices: { ...this.choirVoices },
             backing: this.backing, backingStyle: this.backingStyle,
+            outputProtection: this.outputPosition, extraProtection: this.extraProtection, outputLabel:this.outputLabel,
             sampleRate: this.audioContext ? this.audioContext.sampleRate : null,
             notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz))
         };
@@ -491,16 +533,16 @@ class HarmonySinger {
     // ---------- UI ----------
 
     initUI() {
-        document.getElementById('startBtn').addEventListener('click', () => this.toggle());
+        document.getElementById('startBtn').addEventListener('click', () => { this.debugNoticeAccepted = true; this.toggle(); });
 
         document.querySelectorAll('.mode-btn:not(.scale-btn):not(.position-btn)').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setMode(e.target.dataset.mode));
+            btn.addEventListener('click', (e) => this.setMode(e.currentTarget.dataset.mode));
         });
         document.querySelectorAll('.scale-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setScale(e.target.dataset.scale));
+            btn.addEventListener('click', (e) => this.setScale(e.currentTarget.dataset.scale));
         });
         document.querySelectorAll('.position-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.setPosition(e.target.dataset.position));
+            btn.addEventListener('click', (e) => this.setPosition(e.currentTarget.dataset.position));
         });
 
         const keySelect = document.getElementById('keyRoot');
@@ -549,15 +591,42 @@ class HarmonySinger {
 
         document.querySelectorAll('.toggle[data-voice]').forEach(toggle => {
             toggle.addEventListener('click', (e) => {
-                const voice = e.target.dataset.voice;
+                const el = e.currentTarget;
+                const voice = el.dataset.voice;
                 this.choirVoices[voice] = !this.choirVoices[voice];
-                e.target.classList.toggle('on', this.choirVoices[voice]);
+                el.classList.toggle('on', this.choirVoices[voice]);
+                el.setAttribute('aria-checked', String(this.choirVoices[voice]));
                 this.updateGains();
             });
         });
 
-        const speakerToggle = document.getElementById('speakerModeToggle');
-        if (speakerToggle) speakerToggle.addEventListener('click', () => this.toggleSpeakerMode());
+        const speakerGroup = document.getElementById('speakerModeToggle');
+        const suggestion=document.getElementById('protectionHint');
+        if(suggestion)suggestion.onclick=()=>{const el=document.getElementById('extraProtection');el.checked=true;el.dispatchEvent(new Event('change',{bubbles:true}));suggestion.hidden=true;};
+        const extra=document.getElementById('extraProtection');
+        if(extra)extra.addEventListener('change',()=>this.setExtraProtection(extra.checked));
+        const outputSlider = document.getElementById('outputPosition');
+        if (outputSlider) outputSlider.addEventListener('input', e => this.setOutputPosition(Number(e.target.value)));
+        document.querySelectorAll('[data-output-position]').forEach(b => b.addEventListener('click', () => this.setOutputPosition(Number(b.dataset.outputPosition))));
+        if(speakerGroup)speakerGroup.addEventListener('keydown',e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();this.toggleSpeakerMode();document.getElementById('outputPosition').dispatchEvent(new Event('change',{bubbles:true}));}});
+        if (speakerGroup) speakerGroup.addEventListener('click', e => { if(e.target===speakerGroup && (!e.isTrusted || outputSlider?.type==='hidden')) this.toggleSpeakerMode(); });
+        const echoSelect = document.getElementById('echoModeSelect');
+        if (echoSelect) {
+            if (!this.cancellerAvailable) {
+                const opt = echoSelect.querySelector('option[value="canceller"]');
+                if (opt) opt.disabled = true;
+            }
+            echoSelect.value = this.echoMode;
+            echoSelect.addEventListener('change', (e) => this.setEchoMode(e.target.value));
+        }
+        const checkToggle = document.getElementById('speakerCheckToggle');
+        if (checkToggle) {
+            checkToggle.checked = this.speakerCheck;
+            checkToggle.addEventListener('change', (e) => {
+                this.speakerCheck = !!e.target.checked;
+                this.logEvent('setting', { id: 'speakerCheck', value: this.speakerCheck });
+            });
+        }
 
         this.setMode(this.currentMode, { silent: true });
         this.setScale(this.currentScale);
@@ -581,6 +650,7 @@ class HarmonySinger {
         this.harmonyPosition = position;
         document.querySelectorAll('.position-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.position === position);
+            btn.setAttribute('aria-pressed', String(btn.dataset.position === position));
         });
         this.updateGains();
         this.logEvent('position', { position });
@@ -600,6 +670,7 @@ class HarmonySinger {
         this.currentScale = scale;
         document.querySelectorAll('.scale-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.scale === scale);
+            btn.setAttribute('aria-pressed', String(btn.dataset.scale === scale));
         });
         this.stableMidi = null;
         this.updateKeyStatus();
@@ -726,8 +797,9 @@ class HarmonySinger {
 
     restartIfRunning() {
         if (this.isRunning) {
-            this.stop();
-            setTimeout(() => this.start(), 100);
+            clearTimeout(this.restartTimer);
+            this.masterGain?.gain.rampTo(0,0.05);
+            this.restartTimer=setTimeout(()=>{this.stop(true);this.restartTimer=setTimeout(()=>{this.restartTimer=null;this.start();},50);},60);
         }
     }
 
@@ -735,24 +807,81 @@ class HarmonySinger {
         this.setSpeakerMode(!this.speakerMode);
     }
 
+    setExtraProtection(on) {
+        this.extraProtection=!!on;
+        if(this.loopControl){this.loopControl.mode=on?'protected':'speakers';this.loopControl.holdMs=on?600:800;this.loopControl.trimHigh=on?0.1:0.25;this.loopControl.trimLow=on?0.07:0.17;}
+        if(this.lpFilter&&this.speakerMode)this.lpFilter.frequency.rampTo(on?8000:10000,0.1);
+        if(!on)this.duckUntil=0;
+        this.logEvent('extra-protection',{on:!!on}); this.updateGains();
+    }
+
+    setOutputPosition(position) {
+        this.outputDefaultPending=false;
+        if (![0,1].includes(position) || position === this.outputPosition) return;
+        const wasSpeaker = this.speakerMode;
+        this.outputPosition = position;
+        if (this.loopControl) { this.loopControl.holdMs=this.extraProtection ? 600 : 800; this.loopControl.trimHigh = this.extraProtection ? 0.1 : 0.25; this.loopControl.trimLow = this.extraProtection ? 0.07 : 0.17; }
+        this.logEvent('output-profile', {position});
+        if (wasSpeaker && position>0) {
+            if(this.lpFilter) this.lpFilter.frequency.rampTo(position===1 ? 10000 : 8000,0.1);
+            if(position===1) this.duckUntil=0;
+            this.updateGains(); this.renderSpeakerMode();
+        } else this.setSpeakerMode(position > 0);
+    }
+
     setSpeakerMode(on) {
+        if (this.speakerMode === !!on) { this.renderSpeakerMode(); return; }
         this.speakerMode = !!on;
+        if (!on) this.outputPosition=0; else if (!this.outputPosition) this.outputPosition=1;
+        this.cancellerFailed = false;
         this.logEvent('speaker-mode', { on: this.speakerMode });
         this.renderSpeakerMode();
         this.restartIfRunning();
     }
 
+    setEchoMode(mode) {
+        if (!['canceller', 'browser', 'none'].includes(mode)) return;
+        if (mode === 'canceller' && !this.cancellerAvailable) mode = 'browser';
+        if (mode === this.echoMode) return;
+        this.echoMode = mode;
+        const sel = document.getElementById('echoModeSelect');
+        if (sel && sel.value !== mode) sel.value = mode;
+        this.logEvent('echo-mode', { mode });
+        this.renderSpeakerMode();
+        if (this.speakerMode) this.restartIfRunning();
+    }
+
+    usingCanceller() {
+        return this.speakerMode && this.echoMode === 'canceller' && !this.cancellerFailed;
+    }
+
     renderSpeakerMode() {
-        const toggle = document.getElementById('speakerModeToggle');
-        if (toggle) toggle.classList.toggle('on', this.speakerMode);
+        const group = document.getElementById('speakerModeToggle');
+        if (group) {
+            group.classList.toggle('on', this.speakerMode);
+            group.setAttribute('aria-checked',String(this.speakerMode));
+            document.getElementById('extraProtection').disabled=!this.speakerMode;
+            const slider=document.getElementById('outputPosition');
+            if(slider){ slider.value=this.outputPosition; slider.setAttribute('aria-valuetext', ['Headphones','Speakers'][this.outputPosition]); }
+            document.getElementById('outputProfileLabel').textContent=['Headphones','Speakers'][this.outputPosition];
+        }
         const statusText = document.getElementById('speakerModeStatus');
         if (statusText) {
-            statusText.textContent = this.speakerMode
-                ? 'Speaker Mode: echo cancellation, harmony gate, feedback guard on; your own voice is not monitored'
-                : 'Headphone Mode: full monitoring, no feedback processing';
+            if (!this.speakerMode) {
+                statusText.textContent = 'Headphones: you hear your own voice and the harmonies together. Best sound, no feedback.';
+            } else if (this.echoMode === 'canceller') {
+                statusText.textContent = 'Speakers: harmonies play out loud and your own voice is not replayed. ' +
+                    (this.speakerCheck ? 'A one-second “shh” checks the speakers when you start.' : 'Speaker check is off.');
+            } else if (this.echoMode === 'browser') {
+                statusText.textContent = 'Speakers: using the browser’s call-style echo cancellation, which can turn the harmonies down while you sing.';
+            } else {
+                statusText.textContent = 'Speakers: no echo cancellation; harmonies are kept quieter and a feedback guard watches for howling.';
+            }
         }
         const dryNote = document.getElementById('dryNote');
-        if (dryNote) dryNote.textContent = this.speakerMode ? 'Muted in Speaker Mode (you hear yourself in the room)' : '';
+        if (dryNote) dryNote.textContent = this.speakerMode ? 'Off while on speakers: you already hear yourself in the room.' : '';
+        const echoRow = document.getElementById('echoModeRow');
+        if (echoRow) echoRow.classList.toggle('dimmed', !this.speakerMode);
         this.updateGuardStatus();
     }
 
@@ -762,8 +891,18 @@ class HarmonySinger {
         if (!this.speakerMode) { el.textContent = ''; return; }
         const active = this.notches.filter(n => n.active);
         const list = active.map(n => `${n.hz >= 1000 ? (n.hz / 1000).toFixed(2) + ' kHz' : Math.round(n.hz) + ' Hz'}`).join(', ');
-        el.textContent = `Feedback guard: ${active.length} notch${active.length === 1 ? '' : 'es'}${list ? ' (' + list + ')' : ''}` +
-            (this.isRunning ? ` · gate ${this.gateOpen ? 'open' : 'closed'}` : '');
+        const parts = [];
+        if (this.usingCanceller() && this.isRunning) {
+            const st = this.aecStats;
+            if (this.calibrating) parts.push('Checking speakers…');
+            else if (st) {
+                parts.push(st.adapted ? `Echo canceller: learned (misses about ${Math.round(-10 * Math.log10(Math.max(st.leak, 0.005)))} dB down)` : 'Echo canceller: learning the room');
+                if (this.speakerTrim < 0.94) parts.push(`harmony level held back ${(-20 * Math.log10(this.speakerTrim)).toFixed(0)} dB to stay stable`);
+            }
+        }
+        if (active.length || !this.usingCanceller()) parts.push(`Feedback guard: ${active.length} notch${active.length === 1 ? '' : 'es'}${list ? ' (' + list + ')' : ''}`);
+        if (this.isRunning) parts.push(`harmonies ${this.gateOpen ? 'on' : 'waiting for your voice'}`);
+        el.textContent = parts.join(' · ');
     }
 
     setMode(mode, opts = {}) {
@@ -771,16 +910,21 @@ class HarmonySinger {
         this.currentMode = mode;
         document.querySelectorAll('.mode-btn:not(.scale-btn):not(.position-btn)').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
+            btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode));
         });
         const simpleHarmony = document.getElementById('simpleHarmony');
         const choirLayout = document.getElementById('choirLayout');
         if (FOUR_VOICE_MODES.includes(mode)) {
-            simpleHarmony.style.display = 'none';
+            simpleHarmony.hidden = true;
             choirLayout.classList.add('visible');
+            choirLayout.hidden = false;
         } else {
-            simpleHarmony.style.display = 'flex';
+            simpleHarmony.hidden = false;
             choirLayout.classList.remove('visible');
+            choirLayout.hidden = true;
         }
+        const posGroup = document.getElementById('positionGroup');
+        if (posGroup) posGroup.classList.toggle('dimmed', FOUR_VOICE_MODES.includes(mode));
         if (!opts.silent) this.logEvent('mode', { mode });
         if (this.isRunning && !opts.silent) {
             this.rebuildVoices();
@@ -797,25 +941,51 @@ class HarmonySinger {
 
     updateUI() {
         const btn = document.getElementById('startBtn');
-        const status = document.getElementById('status');
         if (this.isRunning) {
             btn.textContent = 'Stop';
             btn.classList.add('active');
-            status.textContent = (this.testOsc
-                ? `Test tone input (${this.params.get('freq') || 220} Hz)`
-                : 'Listening... Sing something!') + ` · engine: ${this.engine} · ${this.speakerMode ? 'speakers' : 'headphones'}`;
-            status.className = 'status listening';
+            btn.setAttribute('aria-pressed', 'true');
+            if (this.calibrating) {
+                this.setStatus('Checking your speakers… stay quiet for a second.', 'working');
+            } else {
+                const how = this.speakerMode ? 'on speakers' : 'on headphones';
+                this.setStatus(this.testOsc
+                    ? `Test tone input (${this.params.get('freq') || 220} Hz) · engine: ${this.engine} · ${this.speakerMode ? 'speakers' : 'headphones'}`
+                    : `Listening ${how}. Sing a note and hold it.`, 'listening');
+            }
         } else {
-            btn.textContent = 'Start Singing';
+            btn.textContent = 'Start singing';
             btn.classList.remove('active');
-            status.textContent = 'Click to begin';
-            status.className = 'status idle';
+            btn.setAttribute('aria-pressed', 'false');
+            if (!this.lastError) this.setStatus('Ready when you are. Your browser will ask to use the microphone.', 'idle');
             document.getElementById('currentNote').textContent = '--';
             document.getElementById('currentNote').classList.remove('singing');
-            document.getElementById('frequency').textContent = 'Waiting for input...';
+            document.getElementById('frequency').textContent = 'Waiting for your voice';
+            document.querySelectorAll('.voice-indicator').forEach(vi => vi.classList.remove('active'));
         }
+        document.body.classList.toggle('is-running', this.isRunning);
         this.updateGuardStatus();
         this.renderRecording();
+    }
+
+    /** kind: idle | working | listening | error. Errors are announced assertively. */
+    setStatus(text, kind) {
+        const status = document.getElementById('status');
+        if (!status) return;
+        status.textContent = text;
+        status.className = 'status ' + (kind || 'idle');
+        status.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    }
+
+    describeError(err) {
+        const name = err && err.name;
+        if (name === 'NotAllowedError' || name === 'SecurityError') {
+            return 'Microphone access is blocked. Allow the microphone for this site in your browser, then press Start singing.';
+        }
+        if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No microphone was found. Plug one in or check your sound settings, then try again.';
+        if (name === 'NotReadableError') return 'The microphone is busy in another app. Close that app and try again.';
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'This page needs a secure (https) address and a browser with microphone support.';
+        return 'Could not start: ' + ((err && err.message) || 'unknown error');
     }
 
     updateKeyStatus() {
@@ -869,15 +1039,23 @@ class HarmonySinger {
 
     // ---------- Audio graph ----------
 
+    async readOutputLabel(){try{const outputs=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audiooutput');return (outputs.find(d=>d.deviceId==='default')||outputs[0])?.label||'Not exposed by browser';}catch(_){return 'Not exposed by browser';}}
+
     async toggle() {
         if (this.isRunning) this.stop(); else await this.start();
     }
 
     async start() {
+        if (this.starting || this.isRunning) return;
+        this.starting = true;
+        this.lastError = null;
         try {
             await Tone.start();
             this.audioContext = Tone.getContext().rawContext;
             const ctx = this.audioContext;
+            if(!ctx.__harmonyLogged){ctx.__harmonyLogged=true;ctx.addEventListener('statechange',()=>this.logEvent('context-state',{state:ctx.state}));}
+            const roomSim = this.params.get('room') === '1';
+            let useCanceller = this.usingCanceller();
 
             // ---- input source
             if (this.params.get('input') === 'tone') {
@@ -885,14 +1063,45 @@ class HarmonySinger {
                 const osc = ctx.createOscillator();
                 osc.type = this.params.get('wave') || 'sawtooth';
                 osc.frequency.value = freq;
-                const lp = ctx.createBiquadFilter();
-                lp.type = 'lowpass';
-                lp.frequency.value = 2500;
                 const g = ctx.createGain();
-                g.gain.value = 0.25;
-                osc.connect(lp).connect(g);
+                if (this.params.get('voice') === '1') {
+                    // A more voice-like test singer: vowel formants plus vibrato, so partials wander
+                    // the way a real voice does (a dead-steady tone is a special case for cancellers).
+                    g.gain.value = 0.5;
+                    const body = ctx.createBiquadFilter();
+                    body.type = 'lowpass'; body.frequency.value = 900;
+                    const bodyGain = ctx.createGain(); bodyGain.gain.value = 0.35;
+                    osc.connect(body).connect(bodyGain).connect(g);
+                    this.testExtra = [body, bodyGain];
+                    [[650, 5, 1], [1100, 8, 0.6], [2700, 12, 0.3]].forEach(([f, q, a]) => {
+                        const bp = ctx.createBiquadFilter();
+                        bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+                        const ga = ctx.createGain(); ga.gain.value = a;
+                        osc.connect(bp).connect(ga).connect(g);
+                        this.testExtra.push(bp, ga);
+                    });
+                    const lfo = ctx.createOscillator();
+                    lfo.frequency.value = 5.4;
+                    const lfoGain = ctx.createGain(); lfoGain.gain.value = 28;   // cents
+                    lfo.connect(lfoGain).connect(osc.detune);
+                    lfo.start();
+                    this.testLfo = lfo;
+                    this.testExtra.push(lfoGain);
+                } else {
+                    const lp = ctx.createBiquadFilter();
+                    lp.type = 'lowpass';
+                    lp.frequency.value = 2500;
+                    g.gain.value = 0.25;
+                    osc.connect(lp).connect(g);
+                }
                 osc.start();
                 this.testOsc = osc;
+                this.testGain = g;
+                this.testGainBase = g.gain.value;
+                if (this.params.get('level') !== null) g.gain.value = this.testGainBase * parseFloat(this.params.get('level'));
+                this.nearTap = ctx.createAnalyser();      // the clean test singer, before any room echo
+                this.nearTap.fftSize = 4096;
+                g.connect(this.nearTap);
                 this.micSource = g;
                 const howlHz = parseFloat(this.params.get('howl') || '0');
                 if (howlHz > 0) {
@@ -907,33 +1116,111 @@ class HarmonySinger {
                     h.start();
                     this.howlOsc = h;
                 }
-                this.logEvent('start', { input: 'tone', freq, wave: osc.type, howl: howlHz || null, engine: this.engine, speakerMode: this.speakerMode, sampleRate: ctx.sampleRate });
+                this.logEvent('start', { input: 'tone', freq, wave: osc.type, howl: howlHz || null, engine: this.engine, speakerMode: this.speakerMode, echoMode: this.speakerMode ? this.echoMode : null, room: roomSim, sampleRate: ctx.sampleRate });
             } else {
-                // Speaker mode: echo cancellation + noise suppression on, but NO auto gain control.
-                // Measured on the M5 built-in mic (test/aec_realistic.py): AGC lifted the mic floor
-                // by ~11 dB, which eats straight into gain-before-feedback.
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Microphone access is not available on this page');
+                }
+                // Only the "browser" speaker mode asks for the browser's own processing. It is a
+                // telephony canceller: with harmonies and singer both sounding all the time it
+                // attenuates the mic (measured on the M5: fine with a test tone, damped with real
+                // singing). The canceller and headphone paths take the microphone untouched.
+                // Auto gain control is always off: it lifted the mic floor by ~11 dB (test/aec_realistic.py).
+                const browserEc = this.speakerMode && this.echoMode === 'browser';
                 const audioConstraints = {
-                    echoCancellation: this.speakerMode,
-                    noiseSuppression: this.speakerMode && this.params.get('ns') !== '0',
+                    echoCancellation: browserEc,
+                    noiseSuppression: browserEc && this.params.get('ns') !== '0',
                     autoGainControl: false,
                     sampleRate: ctx.sampleRate
                 };
-                this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+                if(this.reusableStream && this.reusableStream.getAudioTracks()[0]?.readyState==='live'){
+                    this.mediaStream=this.reusableStream;this.reusableStream=null;
+                    await this.mediaStream.getAudioTracks()[0].applyConstraints(audioConstraints);
+                }else this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
                 const track = this.mediaStream.getAudioTracks()[0];
                 const settings = track.getSettings();
                 console.log('Actual audio settings:', settings);
-                this.logEvent('start', { input: 'microphone', requested: audioConstraints, actual: settings, label: track.label, engine: this.engine, speakerMode: this.speakerMode, sampleRate: ctx.sampleRate });
-                if (this.speakerMode && settings.echoCancellation === false) {
+                this.logEvent('start', { input: 'microphone', requested: audioConstraints, actual: settings, label: track.label, engine: this.engine, speakerMode: this.speakerMode, echoMode: this.speakerMode ? this.echoMode : null, sampleRate: ctx.sampleRate,
+                    baseLatency: ctx.baseLatency ?? null, outputLatency: ctx.outputLatency ?? null });
+                if (browserEc && settings.echoCancellation === false) {
                     this.logEvent('warning', { message: 'Browser did not apply echo cancellation; relying on gate + feedback guard only' });
+                }
+                if (!browserEc && (settings.echoCancellation === true || settings.noiseSuppression === true || settings.autoGainControl === true)) {
+                    this.logEvent('warning', { message: 'Browser kept its own voice processing on although it was asked not to', actual: settings });
                 }
                 this.micSource = ctx.createMediaStreamSource(this.mediaStream);
             }
 
-            // ---- raw-input analyser for the feedback guard
+            this.outputLabel=await this.readOutputLabel();
+            this.logEvent('output-route',{label:this.outputLabel,source:'Browser default description; physical route not guaranteed'});
+            if(this.outputDefaultPending&&/headphone|airpod|bud|earphone/i.test(this.outputLabel)){
+                this.speakerMode=false;this.outputPosition=0;useCanceller=false;this.renderSpeakerMode();
+                const track=this.mediaStream?.getAudioTracks()[0];if(track)await track.applyConstraints({echoCancellation:false,noiseSuppression:false,autoGainControl:false});
+            }
+            this.outputDefaultPending=false;
+            // ---- simulated room (tests): whatever we play comes back into the "microphone"
+            this.roomNodes = [];
+            this.roomBus = null;
+            if (roomSim) {
+                const bus = ctx.createGain();
+                this.micSource.connect(bus);
+                this.roomNodes.push(this.micSource);
+                this.roomBus = bus;
+                this.micSource = bus;
+            }
+
+            // ---- reference echo canceller (speaker mode): mic in, mic-minus-our-own-playback out
+            let inputNode = this.micSource;
+            this.aecNode = null;
+            this.aecStats = null;
+            if (useCanceller) {
+                try {
+                    const HEC = window.HarmonyEchoCanceller;
+                    if (!ctx.__harmonyAecModule) ctx.__harmonyAecModule = (async()=>{
+                        // Tone14's standardized worklet loader emits an uncaught error onHTTP404
+                        // even when its promise is caught. Fetch first, then load an owned Blob URL.
+                        const response=await fetch(this.params.get('aecUrl')||'echo-canceller.js');
+                        if(!response.ok)throw new Error('Echo module HTTP '+response.status);
+                        const moduleUrl=URL.createObjectURL(new Blob([await response.text()],{type:'text/javascript'}));
+                        try{await ctx.audioWorklet.addModule(moduleUrl);}finally{URL.revokeObjectURL(moduleUrl);}
+                    })();
+                    await ctx.__harmonyAecModule;
+                    const latency = ((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * ctx.sampleRate;
+                    this.aecDelayGuess = Math.max(0, Math.round(latency - 0.012 * ctx.sampleRate));
+                    this.aecNode = Tone.getContext().createAudioWorkletNode(HEC.PROCESSOR_NAME, {
+                        numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [1],
+                        channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers',
+                        processorOptions: { tailMs: 110, delaySamples: this.aecDelayGuess }
+                    });
+                    this.aecNode.port.onmessage = (ev) => this.onAecMessage(ev.data || {});
+                    this.aecNode.onprocessorerror = () => {
+                        this.logEvent('audio-error', { message: 'Echo worklet failed; stopping to prevent feedback' });
+                        this.stop();
+                    };
+                    this.micSource.connect(this.aecNode, 0, 0);
+                    inputNode = this.aecNode;
+                } catch (aecErr) {
+                    console.warn('Echo canceller unavailable, continuing without it:', aecErr);
+                    this.logEvent('warning', { message: 'Reference canceller unavailable; falling back to browser echo cancellation', error: String(aecErr && aecErr.message) });
+                    const track=this.mediaStream?.getAudioTracks()[0];
+                    if(track)await track.applyConstraints({echoCancellation:true,noiseSuppression:false,autoGainControl:false});
+                    this.echoMode='browser';
+                    document.getElementById('echoModeSelect').value='browser';
+                    this.renderSpeakerMode();
+                    ctx.__harmonyAecModule = null;
+                    this.aecNode = null;
+                    useCanceller = false;
+                    this.cancellerFailed = true;
+                }
+            }
+            this.cancellerActive = useCanceller;
+
+            // ---- analyser for the feedback guard (on the cleaned input when the canceller runs,
+            //      otherwise our own harmonies in the room would look like howls)
             this.guardAnalyser = ctx.createAnalyser();
             this.guardAnalyser.fftSize = 4096;
             this.guardAnalyser.smoothingTimeConstant = 0.2;
-            this.micSource.connect(this.guardAnalyser);
+            inputNode.connect(this.guardAnalyser);
 
             // ---- guarded input: [highpass -> notch bank] in speaker mode, straight through otherwise
             this.mic = new Tone.Gain(1);
@@ -955,10 +1242,10 @@ class HarmonySinger {
                     this.notchNodes.push(n);
                     this.notches.push({ hz: 20, lastSeen: 0, active: false });
                 }
-                this.micSource.connect(this.hpFilter);
+                inputNode.connect(this.hpFilter);
                 last.connect(this.mic.input);
             } else {
-                this.micSource.connect(this.mic.input);
+                inputNode.connect(this.mic.input);
             }
 
             // ---- analysers on the guarded input
@@ -976,12 +1263,15 @@ class HarmonySinger {
             this.chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.7, wet: this.chorusAmount });
             this.chorus.start();
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
-            await this.reverb.generate();
+            await this.reverb.ready; // Constructor already generates the impulse response.
             this.masterGain = new Tone.Gain(1);
             this.limiter = new Tone.Limiter(-3);
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
             this.gateGain = new Tone.Gain(1);
-            this.lpFilter = new Tone.Filter({ type: 'lowpass', frequency: this.speakerMode ? 6000 : 20000, rolloff: -12 });
+            this.trimGain = new Tone.Gain(1);
+            // Speakers: roll off the top where a laptop couples hardest. 6 kHz was audibly dull; with the
+            // canceller doing the work 8 kHz is enough. Legacy modes keep the old 6 kHz.
+            this.lpFilter = new Tone.Filter({ type: 'lowpass', frequency: this.speakerMode ? (useCanceller ? (!this.extraProtection ? 10000 : 8000) : 6000) : 20000, rolloff: -12 });
             this.instGain = new Tone.Gain(0);
             this.instTap = ctx.createAnalyser();
             this.instTap.fftSize = 4096;
@@ -995,13 +1285,39 @@ class HarmonySinger {
             // dry: mic -> dryGain -> chorus -> reverb -> master -> limiter -> out
             this.mic.connect(this.dryGain);
             this.dryGain.connect(this.chorus);
-            // harmonies: voices -> gateGain -> lpFilter -> chorus
-            this.gateGain.connect(this.lpFilter);
+            // harmonies: voices -> gateGain -> trimGain -> lpFilter -> chorus
+            this.gateGain.connect(this.trimGain);
+            this.trimGain.connect(this.lpFilter);
             this.lpFilter.connect(this.chorus);
             this.chorus.connect(this.reverb);
             this.reverb.connect(this.masterGain);
-            this.masterGain.connect(this.limiter);
+            if (this.speakerMode) {
+                // One speaker signal: both laptop speakers play the same thing, so the room is a single
+                // echo path the canceller can model (stereo chorus/reverb would be two paths, one reference).
+                this.monoNode = ctx.createGain();
+                this.monoNode.channelCount = 1;
+                this.monoNode.channelCountMode = 'explicit';
+                this.monoNode.channelInterpretation = 'speakers';
+                Tone.connect(this.masterGain, this.monoNode);
+                Tone.connect(this.monoNode, this.limiter);
+            } else {
+                this.masterGain.connect(this.limiter);
+            }
             this.limiter.toDestination();
+            this.outTap = ctx.createAnalyser();
+            this.outTap.fftSize = 4096;
+            Tone.connect(this.limiter, this.outTap);
+
+            if (useCanceller) {
+                // The exact samples that go to the speakers are the canceller's reference. The loop
+                // mic -> canceller -> voices -> limiter -> canceller needs a DelayNode to be legal;
+                // one render quantum is far less than any real output latency.
+                this.refDelay = ctx.createDelay(0.05);
+                this.refDelay.delayTime.value = 128 / ctx.sampleRate;
+                Tone.connect(this.limiter, this.refDelay);
+                this.refDelay.connect(this.aecNode, 0, 1);
+            }
+            if (roomSim) this.buildRoom(ctx);
 
             try {
                 await this.createPitchShifters();
@@ -1019,6 +1335,10 @@ class HarmonySinger {
             }
 
             if (this.instrumentKind()) await this.ensureInstrument(this.instrumentKind());
+            this.speakerTrim = 1;
+            this.aecFrozen = false;
+            this.checkResult = null;
+            if (this.loopControl) this.loopControl.reset();
             this.updateGains();
             this.renderBacking();
 
@@ -1026,16 +1346,205 @@ class HarmonySinger {
             if (this.speakerMode) this.gateGain.gain.value = 0;
             this.guardCandidates = [];
             this.isRunning = true;
+            const checkKey=ctx.sampleRate+':'+this.outputLabel+':'+(this.mediaStream?.getAudioTracks()[0]?.getSettings().deviceId||'synthetic');
+            const cached=this.speakerChecks.get(checkKey);
+            this.calibrating = useCanceller && this.speakerCheck && !cached && (!this.testOsc || roomSim);
+            if(useCanceller&&cached){this.checkResult={...cached,cached:true};this.aecNode.port.postMessage({type:'config',delaySamples:Math.max(0,Math.round((cached.delayMs-2)*ctx.sampleRate/1000))});this.loopControl?.setCoupling(Math.pow(10,cached.couplingDb/10));}
             this.updateUI();
             this.startPitchDetection();
             this.drawWaveform();
-            if (this.params.get('record') === '1') this.startRecording();
+            if (this.calibrating) {await this.runSpeakerCheck();if(this.checkResult?.ok&&this.checkResult.confident)this.speakerChecks.set(checkKey,{...this.checkResult});}
+            const hint=document.getElementById('protectionHint');
+            if(hint)hint.hidden=!(this.checkResult?.couplingDb>-6&&!this.extraProtection);
+            if (this.isRunning && this.params.get('record') === '1') this.startRecording();
+            if (this.isRunning && this.debugNoticeAccepted) window.harmonyDebug?.start(this);
         } catch (err) {
             console.error('Error starting:', err);
             this.logEvent('error', { message: String(err && err.message), name: err && err.name });
-            document.getElementById('status').textContent = 'Error: ' + err.message;
-            document.getElementById('status').className = 'status idle';
+            if(window.harmonyDebug)window.harmonyDebug.skip=false;
+            this.lastError = err;
+            try { this.stop(); } catch (e) { /* partial graph: nothing more to do */ }
+            this.setStatus(this.describeError(err), 'error');
+        } finally {
+            this.starting = false;
         }
+    }
+
+    onAecMessage(m) {
+        if (m.type === 'stats') { this.aecStats = m; return; }
+        const done = m.id && this.aecPending[m.id];
+        if (done) { delete this.aecPending[m.id]; done(m); }
+    }
+
+    aecRequest(msg, timeoutMs = 3000) {
+        const node = this.aecNode;
+        return new Promise((resolve, reject) => {
+            if (!node) { reject(new Error('echo canceller is not running')); return; }
+            const id = ++this.aecSeq;
+            this.aecPending[id] = resolve;
+            node.port.postMessage({ ...msg, id });
+            setTimeout(() => {
+                if (this.aecPending[id]) { delete this.aecPending[id]; reject(new Error('echo canceller did not answer')); }
+            }, timeoutMs);
+        });
+    }
+
+    /**
+     * Speaker check: play a one-second soft noise burst, find how long it takes to come back
+     * through the microphone and how loud it arrives, and let the canceller learn the room from
+     * it while nobody is singing. Harmonies stay muted meanwhile.
+     */
+    async runSpeakerCheck() {
+        const HEC = window.HarmonyEchoCanceller, ctx = this.audioContext, node = this.aecNode, sr = ctx.sampleRate;
+        const result = { ok: false, confident: false, delayMs: null, couplingDb: null, attempts: 0, guessMs: Math.round(1000 * (this.aecDelayGuess || 0) / sr) };
+        const sources = [];
+        const alive = () => this.isRunning && this.aecNode === node;
+        const playProbe = (seconds) => {
+            const probe = HEC.makeProbe(sr, seconds, 0.07);
+            const buf = ctx.createBuffer(1, probe.length, sr);
+            buf.copyToChannel(probe, 0);
+            const src = ctx.createBufferSource();
+            src.buffer = buf;
+            Tone.connect(src, this.masterGain);
+            sources.push(src);
+            const ended = new Promise(res => { src.onended = res; });
+            src.start();
+            return Promise.race([ended, new Promise(res => setTimeout(res, seconds * 1000 + 1500))]);
+        };
+        try {
+            // -- first burst: where does it come back, and how loud?
+            result.attempts = 1;
+            const capture = this.aecRequest({ type: 'capture', samples: Math.round(sr * 0.6) }, 4000);
+            const firstDone = playProbe(1.15);
+            const cap = await capture;
+            if (!alive()) return;
+            const est = HEC.estimateDelay(cap.mic, cap.ref, Math.round(sr * 0.42));
+            let pm = 0, pr = 0;
+            const from = Math.round(sr * 0.08), n = cap.mic.length - est.lag;
+            for (let i = from; i < n; i++) { const m = cap.mic[i + est.lag], r = cap.ref[i]; pm += m * m; pr += r * r; }
+            const powerRatio = pr > 0 ? pm / pr : 0;          // includes anything else the mic heard: an upper bound
+            const lagGain = Math.pow(10, est.gainDb / 10);    // the burst alone, direct path only: a lower bound
+            result.confident = est.confidence >= 8 && pr > 0;
+            result.confidence = +est.confidence.toFixed(1);
+            let coupling;
+            if (result.confident) {
+                result.delayMs = +(1000 * est.lag / sr).toFixed(1);
+                node.port.postMessage({ type: 'config', delaySamples: Math.max(0, est.lag - Math.round(sr * 0.002)) });
+                coupling = Math.min(powerRatio, 4 * lagGain);
+            } else {
+                // The burst is not recognisable in the mic, so it arrived at least ~15 dB below whatever
+                // else the mic was hearing.
+                coupling = Math.min(1, 0.03 * powerRatio);
+            }
+            await firstDone;
+            if (!alive()) return;
+            // -- the rest of the burst trained the canceller. If someone was talking over it, give it one more.
+            let st = this.aecStats;
+            if (result.confident && !(st && st.adapted && st.leak < 0.3)) {
+                result.attempts = 2;
+                this.setStatus('Still checking your speakers… a second of quiet helps.', 'working');
+                await playProbe(0.9);
+                if (!alive()) return;
+                st = this.aecStats;
+            }
+            if (result.confident && st && st.adapted && st.refPow > 1e-9) {
+                // the canceller's own view of the echo is the cleanest measure: it ignores other sounds
+                const learned = Math.pow(10, st.couplingDb / 10);
+                if (isFinite(learned) && learned > 0) coupling = Math.min(Math.max(learned, lagGain), Math.max(powerRatio, lagGain));
+            }
+            result.couplingDb = +(10 * Math.log10(coupling + 1e-12)).toFixed(1);
+            if (this.loopControl) this.loopControl.setCoupling(Math.max(coupling, 1e-6));
+            await new Promise(res => setTimeout(res, 120));
+            if (!alive()) return;
+            st = this.aecStats;
+            result.adapted = !!(st && st.adapted);
+            result.leak = st ? +st.leak.toFixed(3) : null;
+            result.ok = true;
+        } catch (err) {
+            result.error = String(err && err.message);
+        } finally {
+            sources.forEach(src => { try { src.stop(); } catch (e) { /* ignore */ } try { src.disconnect(); } catch (e) { /* ignore */ } });
+            if (this.aecNode === node && node) {
+                this.checkResult = result;
+                this.calibrating = false;
+                this.logEvent('speaker-check', result);
+                this.renderCheckResult();
+                this.updateUI();
+            }
+        }
+    }
+
+    renderCheckResult() {
+        const el = document.getElementById('speakerCheckStatus');
+        if (!el) return;
+        const r = this.checkResult;
+        if (!this.speakerMode || !r) { el.textContent = ''; el.className = 'hint'; return; }
+        let text, warn = false;
+        if (!r.ok) {
+            text = 'Speaker check did not finish; the canceller will learn while you sing.'; warn = true;
+        } else if (!r.confident) {
+            text = 'The microphone could not hear the speakers. If you are wearing headphones, choose Headphones; otherwise turn the volume up a little.'; warn = true;
+        } else if (r.couplingDb > 3) {
+            text = `Speakers are very loud at the microphone (${r.couplingDb > 0 ? '+' : ''}${r.couplingDb.toFixed(0)} dB). Turn the volume down a notch for cleaner harmonies.`; warn = true;
+        } else {
+            text = `Speaker check done: sound returns after ${Math.round(r.delayMs)} ms at ${r.couplingDb.toFixed(0)} dB.`;
+        }
+        el.textContent = text;
+        el.className = warn ? 'hint warn' : 'hint';
+    }
+
+    /** Test rig: speaker feed -> (soft clip) -> delay -> small-room impulse response -> back into the mic. */
+    buildRoom(ctx) {
+        const p = this.params, sr = ctx.sampleRate;
+        const gain = parseFloat(p.get('roomGain') || '1');
+        const delayMs = parseFloat(p.get('roomDelayMs') || '40');
+        const rt60 = parseFloat(p.get('roomRt60') || '0.3');
+        const drive = parseFloat(p.get('roomDrive') || '0');
+        const len = Math.round(sr * Math.min(0.3, rt60));
+        const h = new Float32Array(len);
+        let s = 11;
+        const rand = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+        h[0] = 1;
+        for (const [ms, g] of [[1.3, -0.5], [3.1, 0.35], [7.7, -0.28], [12.4, 0.2]]) h[Math.round(sr * ms / 1000)] += g;
+        const tau = rt60 / 6.91;
+        for (let i = Math.round(sr * 0.004); i < len; i += 5) h[i] += 0.25 * (rand() - 0.5) * 2 * Math.exp(-i / sr / tau) * 0.4;
+        let e = 0;
+        for (let i = 0; i < len; i++) e += h[i] * h[i];
+        const norm = 1 / Math.sqrt(e);
+        for (let i = 0; i < len; i++) h[i] *= norm;       // unit-energy path; roomGain sets the coupling
+        const buf = ctx.createBuffer(1, len, sr);
+        buf.copyToChannel(h, 0);
+        const inp = ctx.createGain();
+        inp.channelCount = 1; inp.channelCountMode = 'explicit';
+        const delay = ctx.createDelay(1);
+        delay.delayTime.value = delayMs / 1000;
+        const conv = ctx.createConvolver();
+        conv.normalize = false;
+        conv.buffer = buf;
+        const g = ctx.createGain();
+        g.gain.value = gain;
+        Tone.connect(this.limiter, inp);
+        let last = inp;
+        if (drive > 0) {
+            const ws = ctx.createWaveShaper();
+            const curve = new Float32Array(2049);
+            const t0 = Math.tanh(0.25), d0 = 1 - t0 * t0;
+            for (let i = 0; i < curve.length; i++) { const x = (i - 1024) / 1024; curve[i] = (Math.tanh(drive * x + 0.25) - t0) / (drive * d0); }
+            ws.curve = curve;
+            last.connect(ws); last = ws;
+            this.roomNodes.push(ws);
+        }
+        last.connect(delay);
+        delay.connect(conv);
+        conv.connect(g);
+        g.connect(this.roomBus);
+        this.echoTap = ctx.createAnalyser();              // the echo alone, as it arrives at the "microphone"
+        this.echoTap.fftSize = 4096;
+        g.connect(this.echoTap);
+        this.roomNodes.push(this.echoTap);
+        this.roomGainNode = g;
+        this.roomDelayNode = delay;
+        this.roomNodes.push(inp, delay, conv, g);
     }
 
     voiceNames() {
@@ -1103,7 +1612,9 @@ class HarmonySinger {
     updateGains() {
         if (this.dryGain) this.dryGain.gain.value = this.speakerMode ? 0 : this.dryVolume;
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
-        const cap = this.speakerMode ? 0.7 : 1;                       // less gain before feedback
+        // Without the canceller, speaker mode needs a fixed cut for gain-before-feedback. With it, level is
+        // only held back when the measured loop needs it (speakerTrim, applied on trimGain).
+        const cap = (this.speakerMode && (!this.usingCanceller() || this.extraProtection)) ? 0.7 : 1;
         const duck = (this.speakerMode && performance.now() < this.duckUntil) ? 0.5 : 1;
         const voiceOn = (this.backing === 'voice' || this.backing === 'voice+piano') ? 1 : 0;
         if (this.instGain) this.instGain.gain.value = this.instrumentKind() ? this.harmonyVolume * 0.9 * (this.speakerMode ? 0.85 : 1) : 0;
@@ -1119,6 +1630,12 @@ class HarmonySinger {
             }
             this.gains[key].gain.value = level * cap * duck * voiceOn;
         });
+    }
+
+    /** True when a sounding harmony voice is a unison or octave copy of the singer. */
+    coherentVoices() {
+        if (this.backing !== 'voice' && this.backing !== 'voice+piano') return false;
+        return Object.keys(this.gains).some(v => this.gains[v].gain.value > 0 && Number.isFinite(this.voiceShifts[v]) && this.voiceShifts[v] % 12 === 0);
     }
 
     setVoiceShift(voice, semitones) {
@@ -1153,19 +1670,41 @@ class HarmonySinger {
         if (this.voicePresent) this.updateInstrumentNotes(inputMidi);
     }
 
-    stop() {
+    stop(preserveInput = false) {
+        clearTimeout(this.restartTimer);
+        window.harmonyDebug?.stop();
+        if(!preserveInput && !this.internalRestart) window.harmonyDebug && (window.harmonyDebug.skip=false);
+        clearTimeout(this.pitchTimer);
         if (this.isRecording()) this.stopRecording();
         this.isRunning = false;
         this.logEvent('stop', {});
         if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach(t => t.stop());
-            this.mediaStream = null;
+            if(preserveInput)this.reusableStream=this.mediaStream;else this.mediaStream.getTracks().forEach(t=>t.stop());
+            this.mediaStream=null;
         }
-        for (const o of [this.testOsc, this.howlOsc]) {
+        if(!preserveInput&&this.reusableStream){this.reusableStream.getTracks().forEach(t=>t.stop());this.reusableStream=null;}
+        for (const o of [this.testOsc, this.howlOsc, this.testLfo]) {
             if (o) { try { o.stop(); } catch (e) { /* ignore */ } }
         }
         this.testOsc = null;
         this.howlOsc = null;
+        this.testLfo = null;
+        this.testGain = null;
+        (this.testExtra || []).forEach(n => { try { n.disconnect(); } catch (e) { /* ignore */ } });
+        this.testExtra = [];
+        this.calibrating = false;
+        if (this.aecNode) {
+            try { this.aecNode.port.postMessage({ type: 'stop' }); } catch (e) { /* ignore */ }
+            try { this.aecNode.port.onmessage = null; this.aecNode.disconnect(); } catch (e) { /* ignore */ }
+        }
+        this.aecNode = null;
+        this.aecStats = null;
+        this.aecPending = {};
+        for (const n of [this.refDelay, this.monoNode, this.outTap, this.nearTap, ...(this.roomNodes || [])]) {
+            if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } }
+        }
+        this.refDelay = null; this.monoNode = null; this.outTap = null; this.roomNodes = []; this.roomBus = null;
+        this.roomGainNode = null; this.roomDelayNode = null; this.nearTap = null; this.echoTap = null;
         const nativeNodes = [this.micSource, this.guardAnalyser, this.pitchAnalyser, this.postGuardAnalyser, this.hpFilter, ...this.notchNodes];
         nativeNodes.forEach(n => { if (n) { try { n.disconnect(); } catch (e) { /* ignore */ } } });
         this.micSource = null; this.guardAnalyser = null; this.pitchAnalyser = null; this.postGuardAnalyser = null; this.hpFilter = null;
@@ -1178,13 +1717,14 @@ class HarmonySinger {
         this.currentChord = null;
         this.voicePresent = false;
         if (this.instTap) { try { this.instTap.disconnect(); } catch (e) { /* ignore */ } this.instTap = null; }
-        [this.mic, this.gateGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
+        [this.mic, this.gateGain, this.trimGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
             .forEach(n => { if (n) { try { n.dispose(); } catch (e) { /* ignore */ } } });
-        this.mic = null; this.gateGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
+        this.mic = null; this.gateGain = null; this.trimGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
         this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
         this.smoothedPitch = null;
         this.stableMidi = null;
         this.guardCandidates = [];
+        this.renderCheckResult();
         this.updateUI();
     }
 
@@ -1196,17 +1736,39 @@ class HarmonySinger {
             if (!this.isRunning) return;
             this.frameCounter++;
             const now = performance.now();
+            if (this.lastDetectAt && now - this.lastDetectAt > 150) this.logEvent('control-delay', { ms: Math.round(now-this.lastDetectAt) });
+            this.lastDetectAt = now;
             this.pitchAnalyser.getFloatTimeDomainData(buf);
             let rms = 0;
             for (let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
             rms = Math.sqrt(rms / buf.length);
             this.lastInputRms = rms;
             let pitch = yinPitch(buf, this.audioContext.sampleRate);
-            const voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.004);
+            let voiced = !!(pitch && pitch > 60 && pitch < 2000 && rms > 0.004);
 
             // Spectral analysis every ~100 ms: classify the input and hunt for howls.
             if (this.frameCounter % GUARD.analyseEveryFrames === 0) {
                 this.analyseSpectrum(voiced ? pitch : null, now);
+            }
+
+            // Speaker mode with the canceller: ask the loop controller whether what we hear is the
+            // singer or just the part of our own harmonies the canceller could not remove. Leftover
+            // echo must not steer the pitch tracker, hold instrument notes or keep the gate open.
+            let loop = null;
+            if (this.usingCanceller() && this.aecNode && this.loopControl) {
+                loop = this.loopControl.update({ now, voiced: voiced && !this.pureTone, stats: this.aecStats });
+                if (!loop.nearOk || this.calibrating) voiced = false;
+                if (Math.abs(loop.trim - this.speakerTrim) > 0.01 || (loop.trim === 1 && this.speakerTrim !== 1)) {
+                    this.speakerTrim = loop.trim;
+                    if (this.trimGain) this.trimGain.gain.rampTo(loop.trim, 0.04);
+                }
+                // unison / octave voices are copies of the singer: adapting on them teaches the canceller
+                // to remove the singer. Learn only in the gaps while such a voice is sounding.
+                const freeze = loop.gateOpen && this.coherentVoices();
+                if (freeze !== this.aecFrozen) {
+                    this.aecFrozen = freeze;
+                    this.aecNode.port.postMessage({ type: 'config', adapt: !freeze });
+                }
             }
 
             if (voiced) {
@@ -1265,7 +1827,7 @@ class HarmonySinger {
             // Harmony gate (speaker mode): only sing along while a real voice is present.
             if (this.speakerMode) {
                 if (voiced && !this.pureTone) this.lastVoicedAt = now;
-                const shouldOpen = now - this.lastVoicedAt < 600;
+                const shouldOpen = loop ? (loop.gateOpen && !this.calibrating) : now - this.lastVoicedAt < 600;
                 if (shouldOpen !== this.gateOpen) {
                     this.gateOpen = shouldOpen;
                     this.gateGain.gain.rampTo(shouldOpen ? 1 : 0, shouldOpen ? 0.03 : 0.15);
@@ -1281,11 +1843,18 @@ class HarmonySinger {
                 this.logEvent('stats', {
                     rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
                     gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
-                    peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)])
+                    peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)]),
+                    ...(loop && this.aecStats ? { aec: {
+                        adapted: this.aecStats.adapted, leak: +this.aecStats.leak.toFixed(3), micDb: Math.round(this.aecStats.micDb), outDb: Math.round(this.aecStats.outDb),
+                        echoDb: Math.round(this.aecStats.echoDb), refDb: Math.round(this.aecStats.refDb), relearns: this.aecStats.relearns, resets: this.aecStats.resets,
+                        renderGaps: this.aecStats.renderGaps, missingInputBlocks: this.aecStats.missingInputBlocks, hardwareUnderruns: null, delaySamples:this.aecStats.delay, tailMs:110, processP99Ms:null, quantum: this.aecStats.quantum, sampleRate: this.aecStats.sampleRate,
+                        trim: +this.speakerTrim.toFixed(2), nearOk: loop.nearOk, coupling: +(10 * Math.log10(this.loopControl.coupling)).toFixed(1) } } : {})
                 });
+                if (this.speakerMode) this.updateGuardStatus();
             }
 
-            requestAnimationFrame(detect);
+            // keep the gate and level control alive when the tab is in the background (no animation frames there)
+            this.pitchTimer = setTimeout(detect, 33);
         };
         detect();
     }
@@ -1330,8 +1899,17 @@ class HarmonySinger {
             const k = Math.round(hz / f);
             return k >= 1 && k <= 12 && Math.abs(hz - k * f) < harmonicTol(f, hz);
         });
+        // With the canceller the guard reads the cleaned mic. What is left of our own harmonies shows
+        // up there as lines at the harmony pitches: expected, and not a howl. Leave those alone.
+        const ownRatios = this.usingCanceller()
+            ? Object.keys(this.gains).filter(v => Number.isFinite(this.voiceShifts[v])).map(v => Math.pow(2, this.voiceShifts[v] / 12))
+            : [];
+        const isOwnHarmony = (hz) => ownRatios.some(r => this.recentF0s.some(f => {
+            const k = Math.round(hz / (f * r));
+            return k >= 1 && k <= 16 && Math.abs(hz - k * f * r) < harmonicTol(f * r, hz);
+        }));
         const strong = peaks.filter(p => p.papr >= GUARD.peakPapr && p.db >= GUARD.minLevelDb &&
-            !(this.harmonicVoice && isHarmonicOf(p.hz)) && !(this.harmonicVoice && nearRecentVoice(p.hz)));
+            !(this.harmonicVoice && isHarmonicOf(p.hz)) && !(this.harmonicVoice && nearRecentVoice(p.hz)) && !isOwnHarmony(p.hz));
         for (const p of strong) {
             let c = this.guardCandidates.find(x => Math.abs(x.hz - p.hz) / p.hz < 0.03);
             if (c) {
@@ -1379,7 +1957,7 @@ class HarmonySinger {
         node.Q.value = GUARD.notchQ;
         if (fresh) {
             this.guardEvents++;
-            this.duckUntil = now + GUARD.duckMs;
+            this.duckUntil = this.extraProtection ? now + 1000 : 0;
             this.updateGains();
             console.log(`Feedback guard: notch ${idx} at ${n.hz.toFixed(0)} Hz`);
             this.logEvent('notch', { slot: idx, hz: Math.round(n.hz) });
@@ -1417,6 +1995,41 @@ class HarmonySinger {
 
     setTestFrequency(hz) {
         if (this.testOsc) this.testOsc.frequency.setTargetAtTime(hz, this.audioContext.currentTime, 0.01);
+    }
+
+    /** Test rig: turn the synthetic singer on (1) or off (0). */
+    setTestLevel(level) {
+        if (this.testGain) this.testGain.gain.setTargetAtTime((this.testGainBase || 0.25) * level, this.audioContext.currentTime, 0.02);
+    }
+
+    /** Test rig: change the simulated room while running (a moved laptop, a volume key). */
+    setRoom(opts) {
+        const t = this.audioContext.currentTime;
+        if (this.roomGainNode && opts.gain != null) this.roomGainNode.gain.setValueAtTime(opts.gain, t);
+        if (this.roomDelayNode && opts.delayMs != null) this.roomDelayNode.delayTime.setValueAtTime(opts.delayMs / 1000, t);
+    }
+
+    /** Speaker-loop state: what is going to the speakers, what the canceller reports, gate and level trim. */
+    measureLoop() {
+        const rmsOf = (an) => {
+            if (!an) return null;
+            const b = new Float32Array(an.fftSize);
+            an.getFloatTimeDomainData(b);
+            let s = 0;
+            for (let i = 0; i < b.length; i++) s += b[i] * b[i];
+            return Math.sqrt(s / b.length);
+        };
+        return {
+            speakerMode: this.speakerMode, echoMode: this.echoMode, canceller: !!this.aecNode, calibrating: this.calibrating,
+            check: this.checkResult, gateOpen: this.gateOpen, trim: this.speakerTrim, frozen: this.aecFrozen,
+            outRms: rmsOf(this.outTap), inRms: rmsOf(this.pitchAnalyser), rawRms: rmsOf(this.guardAnalyser),
+            nearRms: rmsOf(this.nearTap), echoRms: rmsOf(this.echoTap),
+            stats: this.aecStats ? { ...this.aecStats } : null,
+            coupling: this.loopControl ? this.loopControl.coupling : null,
+            appGain: this.loopControl ? this.loopControl.appGain : null,
+            notches: this.notches.filter(n => n.active).length, guardEvents: this.guardEvents,
+            stableMidi: this.stableMidi, voiceTargets: { ...this.voiceTargets }
+        };
     }
 
     /** Measure the pitch actually coming out of each harmony voice. */
@@ -1509,10 +2122,10 @@ class HarmonySinger {
         const width = this.canvas.width / 2;
         const height = this.canvas.height / 2;
         const waveform = this.analyser.getValue();
-        this.canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        this.canvasCtx.fillStyle = 'rgba(14, 16, 20, 0.45)';
         this.canvasCtx.fillRect(0, 0, width, height);
-        this.canvasCtx.lineWidth = 2;
-        this.canvasCtx.strokeStyle = '#e94560';
+        this.canvasCtx.lineWidth = 1.5;
+        this.canvasCtx.strokeStyle = '#8b9bff';
         this.canvasCtx.beginPath();
         const sliceWidth = width / waveform.length;
         let x = 0;
@@ -1522,10 +2135,6 @@ class HarmonySinger {
             x += sliceWidth;
         }
         this.canvasCtx.stroke();
-        this.canvasCtx.shadowBlur = 15;
-        this.canvasCtx.shadowColor = '#e94560';
-        this.canvasCtx.stroke();
-        this.canvasCtx.shadowBlur = 0;
     }
 }
 
