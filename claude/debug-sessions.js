@@ -13,7 +13,7 @@
                 if (!this.enabled) this.stop();
                 this.status(this.enabled ? 'Debug recording ON · ready' : 'Debug recording OFF');
             };
-            this.panel.querySelector('[data-skip]').onclick = () => {this.skip=true;this.status('Not recording this take');if(!window.harmonySinger.isRunning)document.getElementById('startBtn').click();else this.stop();};
+            this.panel.querySelector('[data-skip]').onclick = () => {this.skip=true;this.status('Not recording this session');if(!window.harmonySinger.isRunning)document.getElementById('startBtn').click();else this.stop();};
             this.panel.querySelector('[data-mark]').onclick=()=>this.event?.({type:'mark',t:Math.round(performance.now()),label:'Problem moment'});
             this.panel.querySelector('[data-review]').onclick = () => this.review().catch(e => this.status(e.message));
             this.status(this.enabled ? 'Debug recording ON · ready' : 'Debug recording OFF');
