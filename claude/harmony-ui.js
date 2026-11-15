@@ -69,4 +69,5 @@ window.addEventListener('DOMContentLoaded', () => {
   const head=history.at(-1);if(head&&h.isRunning){const dot=(m,color,label)=>{if(m==null)return;cx.fillStyle=color;cx.beginPath();cx.arc(width*.78,y(m),4,0,Math.PI*2);cx.fill();cx.fillText(label,width*.78+10,y(m));};head.targets.forEach(m=>dot(m,palette.accent,window.HarmonyTheory.midiToName(m)));dot(head.p,palette.ink,'You');}
  }
  requestAnimationFrame(frame);
+ window.dispatchEvent(new Event('harmony-ui-ready'));
 });
