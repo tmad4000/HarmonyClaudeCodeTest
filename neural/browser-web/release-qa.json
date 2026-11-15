@@ -1,0 +1,42 @@
+{
+  "main": {
+    "url": "https://harmony.jacobcole.net/",
+    "status": 200,
+    "title": "Harmony Singer — sing a melody, hear live harmonies",
+    "neural_requests": []
+  },
+  "viewport": {
+    "width": 390,
+    "height": 844,
+    "deviceScaleFactor": 2,
+    "isMobile": true,
+    "hasTouch": true
+  },
+  "load_ms": 1428,
+  "pre_load_click_model_or_runtime_requests": [],
+  "model_requests": [
+    "/neural-browser/model-1.bin",
+    "/neural-browser/model-2.bin"
+  ],
+  "licence_visible": "Model and attribution: OpenVPI Team / DiffSinger Community Vocoder, PC-NSF-HiFiGAN (2025.02). Modified weights use reduced-precision storage, with no fine-tuning, and are distributed under CC BY-NC-SA 4.0 — Attribution, NonCommercial, ShareAlike. Noncommercial use only; modified weights retain the same licence. Model release · Full attribution and modification notice. Pitch and key estimation use DSP; harmony choices use major-scale rules.",
+  "notice_adjacent_to_weights": true,
+  "model_bytes": 28396756,
+  "status": "Ready in 82.6 s · B♭ major. Press play to listen.",
+  "output": {
+    "frames": 441000,
+    "bytes": 882044,
+    "rms": 0.013048675382607068,
+    "peak": 0.10687255859375,
+    "timing": {
+      "record_started": 2162.5999999940395,
+      "first_render_progress": 12516,
+      "render_seconds": 82.55009999999405,
+      "done": 95014.39999997616
+    }
+  },
+  "posts": [],
+  "errors": [],
+  "overflow": false,
+  "sandbox": true,
+  "limitation": "Phone-sized layout/input emulation on Linux Chrome; not physical phone performance, Mac/iOS validation or internet download speed. Local assets served on loopback. Main-page network check used public HTTPS."
+}
