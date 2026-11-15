@@ -58,7 +58,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('sheetBuildTime').textContent=$('buildTime').textContent;$('openSettings').classList.toggle('has-update',!!$('releaseStatus').textContent);
   const status=$('status').textContent;$('appStatus').textContent=h.lastError?status:(h.calibrating?'Checking speakers…':'');
   const p=h.isRunning&&h.voicePresent&&h.smoothedPitch?69+12*Math.log2(h.smoothedPitch/440):null;
-  if(h.isRunning)history.push({t:now,p,targets:p===null||(h.speakerMode&&!h.gateOpen)?[]:Object.entries(h.voiceTargets).filter(([k])=>h.gains[k]?.gain.value>.001).map(([,m])=>m)});
+  if(h.isRunning)history.push({t:now,p,targets:h.speakerMode&&!h.gateOpen?[]:Object.entries(h.voiceTargets).filter(([k])=>h.gains[k]?.gain.value>.001).map(([,m])=>m)});
   history=history.filter(r=>now-r.t<5500);if(p!==null)centre+=(p-centre)*.025;
   cx.clearRect(0,0,width,height);cx.font='10px system-ui';cx.textBaseline='middle';
   const key=h.effectiveKey(),scale=window.HarmonyTheory.SCALES[key.type]||[0,2,4,5,7,9,11];
