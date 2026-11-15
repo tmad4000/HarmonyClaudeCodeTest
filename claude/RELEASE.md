@@ -1,16 +1,14 @@
-# 2026-11-15-saves-live-1
+# 2026-11-15-phone-gate-1
 
-Updated 2026-11-15T11:01:05.673Z.
+Updated 2026-11-15T12:19:00.451Z. Stable v2-1 base; no Saves, boost or later output crossfade.
 
-Every song started with Sing is kept locally as a take (2 seconds or longer). Stop offers Play, Download and Keep; Takes opens the local library. No login is needed. AAC/m4a is preferred when supported, otherwise WebM. Takes include voice and harmonies, including the cleaned voice on Speakers, before any output-volume boost. Unkept takes expire after 14 days or 200 MB; kept takes are never automatically deleted. The Settings switch disables automatic takes.
+- Quiet phone voices use an adaptive noise floor, separate open/close levels and 450 ms hold. Stable, fundamental-dominant notes can continue when near-end evidence is strong; confirmed feedback remains excluded. Decisions and thresholds are logged. iOS gets bounded digital microphone makeup (up to 4x), while raw diagnostics stay before that gain. Browser AGC/NS behavior is unchanged.
+- Fresh users start with Third above only; saved settings win. Speaker check is off unless requested, and remains available in Settings with its sound warning.
+- Mobile-only dismissible experimental notice. Recording has a persistent off choice; raw microphone counters, track/context/route/visibility events are stored locally every 250 ms. Export debug session is visible below Sing. Upload remains disabled; privacy text says so.
+- Network-only update worker uses skipWaiting/clients.claim, plus idle-only fresh-version checks. It defers reload while audio or recording finalization is active. Previously loaded old tabs need one refresh to receive this guard; a service worker was not present in the old v2 source.
+- Suggestion box keeps the same board and loads only after a tap. Updated replaces Built.
 
-Third above and Third below are independent choices; at least one stays selected. The live Headphones/Speakers control crossfades prebuilt audio paths without restarting the microphone or take. Browser AEC is requested on the same track; if the browser does not apply it the caption says so.
-
-Startup sound was the intentional echo probe: the speaker check is now optional, off by default, with a short Run/Skip prompt and a Settings button. Raw microphone telemetry and the picture now tap before our canceller/gate, with zero-run, track-event and context diagnostics. Updated labels replace Built.
-
-Sandboxed Chromium verified mixed AAC download and decode, same context/input/recorder across output changes, interrupted recovery, pin/delete, encoder-start failure, migration and recording persistence. Synthetic room tests pass at 44.1/48 kHz. Singing on real speakers is unverified until Jacob records a take; Linux does not verify iPhone Safari. Public debug upload and the public privacy update are a separate upcoming release; this version keeps data in the browser.
-
-The World Issue Tracker feedback script loads only after Send feedback is tapped. Tone.js 14.8.49 remains vendored locally.
+Validation: quiet-tone/noise/feedback/silence regression; private iPhone event replay corrected held-tone gate decisions from 42% to 100%; raw audio replay through sandboxed Chrome at 48 kHz improved quiet output (Linux Chrome with iPhone UA is not a physical iPhone test). Root's exported audio remains private and is never included in the site/repo. Real phone validation is still required.
 
 ---
 
@@ -39,12 +37,3 @@ Release metadata identifies the artifact build, never an anticipated publication
 
 ## V2 follow-up
 Fable v2 app shell on the already-shipped incremental engine: equal output pills, live actual pitch and target harmonies on the current-key staff, harmony chips, one Sing/Stop action and a native settings sheet. Recording indicator follows actual recorder state; defaultboth selects bothThird chips. Dark/light system themes and reduced-motion rendering are supported. Feedback loads third-party code only after an explicit Send feedback click. Session pruning now occurs at take start/end, not every2second audio chunk. The incrementalv5 remains an additional rollback; originalv4 is retained.
-
-
-## Local Tone follow-up
-Vendor the exact previously loadedTone14.8.49 bytes and licenses; no version upgrade. No CDN request is required on page load. Baseline screenshots are archived in docs/screenshots/2026-11-15 with68 dark/light, phone/desktop, mode and state views. Both themes and the Mix→Speakers settings order were inspected. About now has a small version/build stamp with touch/keyboard exact details; sourcecommit metadata can be supplied in the release manifest. Audio processing unchanged. Real singing on speakers remains unverified until Jacob records a take.
-
-
-## Quiet startup and speaker-check consent
-The reported startup static was reproduced as the intentional speaker-check noise: same noise-first fake microphone, default check output peak0.0713RMS/mean0.0277 versus exactlyzero with checking disabled. Speaker checking is now off by default. First Speakers use offers one short Run/Skip prompt; Settings retains Run speaker check. The manual check starts an idle graph only for the requested test, returns to idle afterwards, caches a confident result for later singing, and can be cancelled without stopping a newer session. AEC captures now reject on Stop instead of hanging. The AEC algorithm is unchanged.
-Sustained level tests passed on injected and fake-microphone routes: speaker/headphone mean ratios1.042 and1.183 respectively, both above0.5; gates open throughout measured voice. This does not reproduce a25dB attenuation policy on live. Startup noise test with checking off emittedzero during the measured quiet window. Physical singing in a room remains unverified until Jacob records a take.

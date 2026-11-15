@@ -7,9 +7,9 @@
     <meta name="description" content="Harmony Singer listens to your voice and sings in-key harmonies back in real time, on headphones or out loud on speakers.">
     <meta property="og:title" content="Harmony Singer — sing a melody, hear live harmonies">
     <meta property="og:description" content="Real-time, in-key backup harmonies from your own voice. Works on headphones or speakers.">
-    <meta name="harmony-version" content="2026-11-15-saves-live-1">
+    <meta name="harmony-version" content="2026-11-15-phone-gate-1">
     <meta name="color-scheme" content="dark light">
-    <script src="vendor/Tone-14.8.49.js"></script>
+    <script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
     <script src="vendor/SignalsmithStretch.js"></script>
     <script src="echo-canceller.js"></script>
     <style>
@@ -228,7 +228,7 @@
 <body>
     <div class="container">
         <header>
-            <div class="release-info"><span data-status role="status"></span><details><summary><time id="buildTime"></time></summary><div class="build-popover"><span id="buildDetail"></span><br><span>Version 2026-11-15-saves-live-1</span><br><button type="button" id="checkVersion">Check for update</button></div></details><span id="releaseStatus" aria-live="polite"></span> <button id="refreshVersion" type="button" hidden>Refresh app</button></div>
+            <div class="release-info"><span data-status role="status"></span><details><summary><time id="buildTime"></time></summary><div class="build-popover"><span id="buildDetail"></span><br><span>Version 2026-11-15-phone-gate-1</span><br><button type="button" id="checkVersion">Check for update</button></div></details><span id="releaseStatus" aria-live="polite"></span> <button id="refreshVersion" type="button" hidden>Refresh app</button></div>
             <h1>Harmony Singer</h1>
             <p class="subtitle">Sing a melody. Hear in-key harmonies sung back with your own voice, live.</p>
         </header>
@@ -236,7 +236,7 @@
         <main>
             <aside id="debugSessions" class="card" aria-label="Debug sessions">
                 <label><input type="checkbox" checked> Record debug sessions on this device</label>
-                <p class="hint">Starting saves microphone and harmony audio plus diagnostic events on this browser only. No uploads. Turn off before starting to skip recording. Unkept debug sessions expire after 14 days when this app opens; maximum 100 MB unkept, 10 minutes of audio per session. Kept debug sessions are never automatically deleted. Anyone using this browser profile can review its recordings.</p>
+                <p class="hint">Starting saves microphone and harmony audio plus diagnostic events on this browser only. No uploads. Turn off before starting to skip recording. Unkept takes expire after 14 days when this app opens; maximum 100 MB unkept, 10 minutes of audio per session. Kept takes are never automatically deleted. Anyone using this browser profile can review its recordings.</p>
 
                 <button type="button" data-mark>Mark problem (M)</button> <button type="button" data-skip>Start without recording</button> <button type="button" data-review>Saved sessions on this device</button><div data-sessions></div>
             </aside>
@@ -421,7 +421,7 @@
                         <label class="check-row"><input type="checkbox" id="extraProtection"> Extra feedback protection (loud rooms)</label>
                         <label class="check-row" for="speakerCheckToggle">
                             <input type="checkbox" id="speakerCheckToggle">
-                            <span>Run a sound check automatically on start (plays a short “shh”)</span>
+                            <span>Run a one-second speaker check when starting on speakers (a soft “shh” that measures the room)</span>
                         </label>
                         <p id="guardStatus" class="hint" aria-live="off"></p>
                         <p class="hint">The harmony echo canceller subtracts the app’s own sound from the microphone instead of turning the microphone down, so harmonies should stay up while you sing. Only used when listening on speakers.</p>
@@ -473,7 +473,7 @@
                             <button type="button" class="mode-btn" id="logBtn">Save debug log</button>
                         </div>
                         <div id="recordStatus" class="key-status" aria-live="polite"></div>
-                        <p class="hint">Recordings download as .webm when stopped. The log is JSON: notes, shifts, key, gate, echo-canceller readings and 2 Hz input stats. If speakers misbehave, record a song and save the log.</p>
+                        <p class="hint">Recordings download as .webm when stopped. The log is JSON: notes, shifts, key, gate, echo-canceller readings and 2 Hz input stats. If speakers misbehave, record a take and save the log.</p>
                     </section>
 
                     <section aria-labelledby="advHelp">
@@ -495,6 +495,7 @@
         </footer>
     </div>
 
+    <script src="quiet-voice-gate.js"></script>
     <script src="harmony-app.js"></script>
     <script src="release-time.js"></script>
     <script src="app-features.js"></script>
@@ -502,7 +503,9 @@
     <script src="session-metrics.js"></script>
     <script src="debug-sessions.js"></script>
     <script src="harmony-ui.js"></script>
-    <script src="takes.js"></script>
-    <script defer src="harmony-wit-feedback.js" data-app-version="2026-11-15-saves-live-1"></script>
+    <script src="debug-endpoint.js"></script>
+    <script src="beta-diagnostics.js"></script>
+    <script src="update-guard.js"></script>
+    <script defer src="harmony-wit-feedback.js" data-app-version="2026-11-15-phone-gate-1"></script>
 </body>
 </html>

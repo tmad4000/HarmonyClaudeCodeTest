@@ -1,7 +1,7 @@
 /* Keep version.json and this identifier in sync whenever the site is released. */
 (() => {
-    const VERSION = '2026-11-15-saves-live-1';
-    const BUILD_TIME = '2026-11-15T11:01:05.673Z';
+    const VERSION = '2026-11-15-phone-gate-1';
+    const BUILD_TIME = '2026-11-15T12:19:00.451Z';
     const KEY = 'harmony-singer-settings-v1';
     const params = new URLSearchParams(location.search);
     const selects = { keyRoot: 'key', engineSelect: 'engine', backingSelect: 'backing', backingStyleSelect: 'backingStyle', recordMode: 'recordmode' };
@@ -46,7 +46,6 @@
             const response = await fetch('version.json', { cache: 'no-store' });
             if (!response.ok) return;
             const latest = await response.json();
-            if(latest.version===VERSION)window.HarmonyBuildMeta=latest;
             if (typeof latest.version === 'string' && latest.version !== VERSION) {
                 document.getElementById('releaseStatus').textContent = 'A new version is available';
                 document.getElementById('refreshVersion').textContent = 'Update · reload';

@@ -1,5 +1,0 @@
-class RawInputObserver extends AudioWorkletProcessor {
- constructor(){super();this.alive=true;this.port.onmessage=e=>{if(e.data?.type==='stop')this.alive=false;};this.frames=0;this.missing=0;this.zeroSamples=0;this.zeroRun=0;this.longest=0;this.gaps=0;this.expected=null;}
- process(inputs){if(!this.alive)return false;const x=inputs[0]?.[0];if(this.expected!==null&&currentFrame!==this.expected)this.gaps++;const n=x?.length||128;this.expected=currentFrame+n;this.frames++;if(!x)this.missing++;let power=0;for(let i=0;i<n;i++){const v=x?.[i]||0;power+=v*v;if(Math.abs(v)<1e-8){this.zeroSamples++;this.zeroRun++;this.longest=Math.max(this.longest,this.zeroRun);}else this.zeroRun=0;}if(this.frames%Math.max(1,Math.round(sampleRate/n))===0)this.port.postMessage({sampleRate,quantum:n,frames:this.frames,missingInputFrames:this.missing,renderGaps:this.gaps,zeroSamples:this.zeroSamples,zeroRunSamples:this.zeroRun,longestZeroRunSamples:this.longest,zeroRunMs:this.zeroRun/sampleRate*1000,longestZeroRunMs:this.longest/sampleRate*1000,rms:Math.sqrt(power/n),hardwareUnderruns:null});return true;}
-}
-registerProcessor('harmony-raw-input-observer',RawInputObserver);
