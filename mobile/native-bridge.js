@@ -2,22 +2,24 @@
 window.addEventListener('DOMContentLoaded', () => {
  const h=window.harmonySinger, p=window.Capacitor?.Plugins?.HarmonyAudioSession;
  if(!h||!p)return;
- let starting=false, generation=0, captureAttempt=null;
+ let starting=false, generation=0, captureAttempt=null, attemptContext=null;
+ const contextState=()=>{try{const c=window.Tone?.getContext()?.rawContext;return {state:c?.state||null,sampleRate:c?.sampleRate||null};}catch(e){return {error:String(e.message||e)};}};
+ const activation=()=>({isActive:navigator.userActivation?.isActive??null,hasBeenActive:navigator.userActivation?.hasBeenActive??null});
  const media=navigator.mediaDevices;
  if(media?.getUserMedia){
   const getUserMedia=media.getUserMedia.bind(media);
   media.getUserMedia=async constraints=>{
-   captureAttempt={constraints:JSON.parse(JSON.stringify(constraints,(key,value)=>['deviceId','groupId'].includes(key)?undefined:value)),secureContext:window.isSecureContext,origin:location.origin};
-   try{return await getUserMedia(constraints);}
-   catch(error){captureAttempt.native=await p.getRoute().catch(()=>null);captureAttempt.error={name:error.name||'Error',message:String(error.message||error)};throw error;}
+   captureAttempt={constraints:JSON.parse(JSON.stringify(constraints,(key,value)=>['deviceId','groupId'].includes(key)?undefined:value)),secureContext:window.isSecureContext,origin:location.origin,mediaDevices:!!media,getUserMedia:typeof media?.getUserMedia==='function',userActivation:activation(),contextBefore:contextState()};
+   try{const stream=await getUserMedia(constraints);captureAttempt.contextAfter=contextState();return stream;}
+   catch(error){captureAttempt.native=await p.getRoute().catch(()=>null);captureAttempt.contextAfter=contextState();captureAttempt.error={name:error.name||'Error',message:String(error.message||error),constraint:typeof error.constraint==='string'?error.constraint:null};throw error;}
   };
  }
  const reportFailure=async error=>{
   const native=captureAttempt?.native||await p.getRoute().catch(e=>({diagnosticsError:String(e.message||e)}));
   let permission='unavailable';
   try{permission=(await navigator.permissions.query({name:'microphone'})).state;}catch(_){}
-  const failure={name:error?.name||error?.code||'Error',message:String(error?.message||error),permission,native,
-   capture: captureAttempt||{constraints:null,attempted:false,secureContext:window.isSecureContext,origin:location.origin}};
+  const failure={name:error?.name||error?.code||'Error',message:String(error?.message||error),constraint:typeof error?.constraint==='string'?error.constraint:null,permission,native,attempt:attemptContext,contextAfter:contextState(),
+   capture: captureAttempt||{constraints:null,attempted:false,secureContext:window.isSecureContext,origin:location.origin,mediaDevices:!!media,getUserMedia:typeof media?.getUserMedia==='function',userActivation:activation()}};
   h.logEvent('mic-start-failed',failure);
   const denied=native.recordPermission==='denied'||permission==='denied'||failure.name==='NotAllowedError'||error?.code==='MIC_PERMISSION_DENIED';
   const reason=denied?'Microphone permission denied: enable in Settings → Harmony':!media?.getUserMedia?'Microphone capture is unavailable in this app. Update Harmony and try again.':'Microphone could not start: '+failure.message;
@@ -48,18 +50,18 @@ window.addEventListener('DOMContentLoaded', () => {
  h.start=async function(...args){
   if(starting||h.starting||h.isRunning)return;
   starting=true;const own=++generation;
-  captureAttempt=null;
+  captureAttempt=null;attemptContext={contextBefore:contextState(),userActivation:activation(),mediaDevices:!!media,getUserMedia:typeof media?.getUserMedia==='function',secureContext:window.isSecureContext};
   // Resume Web Audio inside the original tap, before any native promise yields.
   try {
    const audioReady=Promise.resolve(window.Tone?.start()).then(()=>null,error=>error);
-   const data=await p.prepare();
+   const data=await p.prepare();attemptContext.nativeAfterPrepare=data;attemptContext.contextAfterPrepare=contextState();
    if(own!==generation){await p.release();return;}
    const audioError=await audioReady;if(audioError)throw audioError;
    applyRoute(data);await originalStart(...args);
    // The engine reports failures in lastError rather than rejecting its promise.
    if(h.lastError){await reportFailure(h.lastError);await p.release();return;}
    if(own!==generation){originalStop();await p.release();return;}
-   if(h.isRunning)route(await p.activate());else await p.release();
+   if(h.isRunning)route(await p.activate());else {await reportFailure(new Error('Microphone startup stopped before capture became active'));await p.release();}
   } catch(error){
    originalStop();h.lastError=error;
    await reportFailure(error).catch(e=>h.logEvent('diagnostic-error',{message:String(e.message||e)}));
