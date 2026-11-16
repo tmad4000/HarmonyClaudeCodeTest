@@ -1,3 +1,13 @@
+## 2026-11-16-byte-recordings-1
+
+Debug audio is materialized immediately from each live MediaRecorder callback and persisted as owned bytes with its MIME type, rather than retaining WebKit file-backed Blobs in IndexedDB. JSON event chunks are byte-backed too. Ordered writes and Stop finalization preserve the last chunk; Turning Recording off invalidates pending reads even if it is turned back on before they finish. Upload creates a temporary Blob from those bytes and verifies the same exact size and SHA-256 acknowledgement. Local exports support both new byte chunks and older valid Blob chunks. No codec or audio-engine change.
+
+An older queued Blob that fails with NotFoundError is permanently marked lost on this device, with delivery unconfirmed: an earlier request may have reached the server without its acknowledgement. That part is not retried or replaced with empty audio. A bounded, once-per-session loss report uses the already accepted metadata path. Other parts and later sessions continue. Generic Retry cannot revive lost payloads; authentication/rate limits, Recording off, notice, deletion/epoch fences, immutable chunk names and storage caps still apply. Loss summaries survive later metadata updates.
+
+New byte tasks use a queue marker older open tabs do not consume; the updated reader merges old and new tasks in their original priority order. No database, device or credential reset is performed. The shared store change adds byte-backed audio reads only; Keep/retention semantics are unchanged.
+
+Validation uses generated data, real IndexedDB, an actual generated-input MediaRecorder, exact byte/MIME/hash round trips, a persistent-only legacy-Blob NotFoundError fault, and independent cancellation/Off/removal/retry review. All network traffic is intercepted; no new public pilot, real microphone or private recording is used. This targets Jacob's reported build-4 browser-storage failure; physical iPhone confirmation remains with the next native build. The separate recorder-start-failure fallback follows this release; gain/feedback work remains paused.
+
 ## 2026-11-16-audio-check-telemetry-1
 
 Audio-check readings are included automatically in debug events and session metadata: raw pre-canceller mic and post-limiter output level, processed level, gate/master/trim/voice gains, input makeup, browser family, AudioSession type/state, context, reported route and permitted microphone constraints. Stop retains the last active reading with its original timestamp. Fresh start and Recording off clear that in-memory cache; off-state reads cannot restore it. The route is a browser description, not proof of the physical speaker.
