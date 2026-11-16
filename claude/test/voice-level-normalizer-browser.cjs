@@ -1,0 +1,17 @@
+/* Generated input only; all network intercepted; no microphone or uploads. */
+const fs=require('fs'),path=require('path'),assert=require('assert/strict'),{chromium}=require(process.env.PLAYWRIGHT_MODULE||'/home/dev/agent-worktrees/paseo-tab-local-splits-20261114/node_modules/playwright');
+const ROOT=path.resolve(__dirname,'..'),ORIGIN='https://harmony-level.test';
+(async()=>{const b=await chromium.launch({headless:true,chromiumSandbox:true,executablePath:'/opt/google/chrome/chrome',args:['--mute-audio']});try{const results=[];
+for(const test of [{name:'quiet-seeded',db:-73},{name:'normal',db:-35},{name:'continuous-without-seed',db:-73,continuous:true}]){
+ const c=await b.newContext({serviceWorkers:'block',userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_0 like Mac OS X) AppleWebKit/605.1.15 Version/26.6 Mobile Safari/604.1'}),p=await c.newPage(),errors=[],blocked=[];p.on('pageerror',e=>errors.push(e.message));
+ await c.route('**/*',r=>{const u=new URL(r.request().url());if(u.origin!==ORIGIN){blocked.push(u.origin);return r.abort();}const f=path.resolve(ROOT,decodeURIComponent(u.pathname.slice(1)||'index.html'));return f.startsWith(ROOT+'/')?r.fulfill({path:f}):r.abort();});
+ await p.goto(ORIGIN+'/?input=tone&voice=1&freq=123.470825&level=.001&key=C%23&scale=major&speaker=1&mode=thirds&debug=0&check=0');await p.locator('#startBtn').click();await p.waitForFunction(()=>harmonySinger.isRunning&&!harmonySinger.starting);
+ const data=await p.evaluate(async test=>{const h=harmonySinger,rms=node=>{const a=new Float32Array(node.fftSize);node.getFloatTimeDomainData(a);return Math.sqrt(a.reduce((n,v)=>n+v*v,0)/a.length);};h.harmonyPosition='above';h.updateGains();if(test.continuous)h.setDebugContinuous(true);await new Promise(r=>setTimeout(r,150));const level=.001*Math.pow(10,test.db/20)/rms(h.debugRawAnalyser);h.setTestLevel(level);await new Promise(r=>setTimeout(r,3200));const rows=[];for(let i=0;i<30;i++){rows.push({raw:rms(h.debugRawAnalyser),out:rms(h.outTap),normalization:{...h.voiceNormalization},decision:{...h.voiceDecision},gate:h.gateOpen});await new Promise(r=>setTimeout(r,50));}h.setTestLevel(0);await new Promise(r=>setTimeout(r,300));const afterSilence={...h.voiceNormalization};h.stop();return{rows,afterSilence};},test);
+ const avg=k=>data.rows.reduce((s,r)=>s+r[k],0)/data.rows.length,db=x=>20*Math.log10(Math.max(x,1e-12)),summary={name:test.name,rawDb:db(avg('raw')),outputDb:db(avg('out')),gainMean:data.rows.reduce((s,r)=>s+r.normalization.gain,0)/data.rows.length,proofFrames:data.rows.filter(r=>r.normalization.proof).length,gateFrames:data.rows.filter(r=>r.gate).length,afterSilenceGain:data.afterSilence.gain,lastDecision:data.rows.at(-1).decision,lastNormalization:data.rows.at(-1).normalization,errors,blocked};
+ console.log(JSON.stringify(summary));
+ assert.deepEqual(errors,[]);assert.deepEqual(blocked,[]);assert.equal(summary.afterSilenceGain,1);
+ if(test.name==='quiet-seeded')assert.ok(summary.gainMean>1.5,'quiet seeded input should receive bounded gain');
+ if(test.name==='normal'){assert.ok(summary.gainMean<2.5,'ordinary input does not hit the quiet-room cap');assert.ok(summary.outputDb< -20,'normal input retains output headroom');}
+ if(test.continuous)assert.equal(summary.gainMean,1,'Continuous is not independent near-end proof');
+ results.push(summary);await c.close();
+}console.log(JSON.stringify({passed:true,sandbox:true,generatedOnly:true,physicalIos:false,results}));}finally{await b.close();}})().catch(e=>{console.error(e);process.exit(1)});

@@ -638,6 +638,9 @@
          */
         update(s) {
             const now = s.now, st = s.stats, explicitEvidence = typeof s.independentNear === 'boolean';
+            // Learn at boost=1; account for actual boost outside the 100-power cap.
+            const voiceGain=Number.isFinite(s.voiceGain)?Math.max(1,Math.min(64,s.voiceGain)):1;
+            const baseFloor=voiceGain>1&&Number.isFinite(s.appGainFloor)?Math.max(0,s.appGainFloor):0;
             const dt = this.lastUpdate === null ? 0 : Math.min(0.25, Math.max(0, (now - this.lastUpdate) / 1000));
             this.lastUpdate = now;
             let nearOk = true, powerNearOk = true;
@@ -674,13 +677,13 @@
                 // How much speaker level the app makes out of a unit of singer, measured while all is well.
                 if (trusted && (this.couplingKnown || !explicitEvidence) && this.gateOpen && s.voiced && powerNearOk && near > 1e-7) {
                     const t = Math.max(this.minTrim, Math.min(this.trim, this.bound));
-                    const a = st.refPow / (near * t * t);
+                    const a = st.refPow / (near * t * t * voiceGain * voiceGain);
                     if (isFinite(a) && a > 0) this.appGain += (Math.min(a, 100) - this.appGain) * Math.min(1, dt * 3);
                 }
                 // Feed-forward bound: loop gain = coupling x app gain x trim^2 x (what the canceller misses).
                 // It applies at once, so when the canceller reports trouble the level is already safe
                 // before the loop has gone round a second time; it lifts again as soon as trust returns.
-                this.bound = Math.min(1, Math.sqrt(this.trimHigh / (leak * this.coupling * this.appGain + 1e-12)));
+                this.bound = Math.min(1, Math.sqrt(this.trimHigh / (leak * this.coupling * Math.max(this.appGain,baseFloor) * voiceGain * voiceGain + 1e-12)));
                 // Last line of defence: nobody sings so loudly that the speaker feed sits at the limiter.
                 this.hotMs = st.refPow > this.hotPow ? this.hotMs + dt * 1000 : 0;
                 if (this.hotMs > 300) { this.trim *= 0.5; this.hotMs = 0; this.emergencies++; this.emergencyUntil=now+4000; }
@@ -696,7 +699,7 @@
                 const leak=st&&st.adapted&&!st.suspect?Math.max(st.leak,this.leakFloor):1;
                 // Unknown digital-to-acoustic gain is not a measured emergency.
                 // Keep the absolute hot-output safeguard even before calibration.
-                const loopPower=st&&(this.couplingKnown||!explicitEvidence)?leak*this.coupling*this.appGain:0;
+                const loopPower=st&&(this.couplingKnown||!explicitEvidence)?leak*this.coupling*Math.max(this.appGain,baseFloor)*voiceGain*voiceGain:0;
                 if(loopPower>0.5)this.emergencyActive=true;
                 else if(loopPower<0.25)this.emergencyActive=false;
                 const target=this.emergencyActive?Math.max(0.5,Math.min(1,Math.sqrt(0.5/Math.max(loopPower,1e-12)))):1;
