@@ -1064,6 +1064,7 @@ class HarmonySinger {
     /** Normal safety classification continues running even while its VAD gate is bypassed. */
     normalHarmonyGate(now = performance.now()) {
         if (!this.speakerMode) return true;
+        if (this.quietAssistBlocked()) return false;
         if (this.calibrating) return false;
         if (this.usingCanceller() && this.aecNode && this.loopControl) {
             return now - this.loopControl.lastNearAt < this.loopControl.holdMs;
@@ -1078,7 +1079,7 @@ class HarmonySinger {
         const now = performance.now();
         if (this.duckUntil && this.duckUntil <= now) this.duckUntil = 0;
         if (this.isRunning && this.gateGain) {
-            this.gateOpen = (on && !this.calibrating) || this.normalHarmonyGate(now);
+            this.gateOpen = !this.quietAssistBlocked()&&((on && !this.calibrating) || this.normalHarmonyGate(now));
             this.gateGain.gain.rampTo(this.gateOpen ? 1 : 0, 0.03);
             this.updateGains();
             this.updateGuardStatus();
@@ -1118,6 +1119,7 @@ class HarmonySinger {
             gateGain: this.gateGain?.gain.value ?? null, masterGain: this.masterGain?.gain.value ?? null,
             voiceNormalization:this.voiceNormalization?{...this.voiceNormalization}:null,
             actualVoiceLevelGain:this.voiceLevelGain?this.readAudioGain(this.voiceLevelGain):null,
+            quietAssist:this.quietAssistContainment?.snapshot()??null,
             canceller: !!this.aecNode, trim: this.speakerTrim,
             ducking: !this.debugContinuous && this.speakerMode && now < this.duckUntil
         });
@@ -1759,6 +1761,10 @@ class HarmonySinger {
     }
 
     updateGains() {
+        if(this.quietAssistBlocked()){
+            for(const node of [this.dryGain,this.instGain,this.masterGain,this.gateGain,...Object.values(this.gains)])this.muteGainNow(node);
+            return;
+        }
         if (this.dryGain) this.dryGain.gain.value = this.speakerMode ? 0 : this.dryVolume;
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
         // Without the canceller, speaker mode needs a fixed cut for gain-before-feedback. With it, level is
@@ -1789,6 +1795,35 @@ class HarmonySinger {
 
     usesIndependentNearEvidence() {
         return this.currentMode === 'thirds' && this.backing === 'voice';
+    }
+
+    quietAssistBlocked(){return this.speakerMode&&!!this.quietAssistContainment?.latched;}
+
+    muteGainNow(node){if(!node||!this.audioContext)return;const t=this.audioContext.currentTime;node.gain.cancelAndHoldAtTime(t);node.gain.linearRampToValueAtTime(0,t+.02);}
+
+    inspectQuietAssist(now,pitch,decision,freshStats,eligible){
+        const guard=this.quietAssistContainment;if(!guard)return;
+        const before=guard.status,rawPow=this.aecStats?.micPow;
+        if(eligible&&!this.calibrating)guard.considerVoice({now,pitch,rawPow,accepted:decision.voiced,stable:decision.stable,
+            independentNear:decision.independentNear,playedAmbiguous:decision.matchesPlayed,freshStats,
+            quietReference:decision.quietReference,referenceActive:decision.referenceActive,marginUsed:decision.quietTonalMarginUsed});
+        if(before!==guard.status)this.logEvent('quiet-assist-state',guard.snapshot());
+        if(!guard.anchor||guard.latched||!eligible||!freshStats)return;
+        let peaks;
+        if(now-(this.quietReferenceAt??-Infinity)>=100&&this.outTap){
+            this.quietReferenceAt=now;
+            if(!this.quietReferenceSpectrum||this.quietReferenceSpectrum.length!==this.outTap.frequencyBinCount)this.quietReferenceSpectrum=new Float32Array(this.outTap.frequencyBinCount);
+            this.outTap.getFloatFrequencyData(this.quietReferenceSpectrum);
+            peaks=findSpectralPeaks(this.quietReferenceSpectrum,this.audioContext.sampleRate/this.outTap.fftSize,60,2000,12,-120);
+        }
+        if(guard.inspect({now,pitch,rawPow,peaks})){
+            this.quietVoiceGate.revokeIndependentEvidence();
+            if(this.loopControl){this.loopControl.lastNearAt=-Infinity;this.loopControl.gateOpen=false;}
+            this.lastVoiceSeen=-Infinity;this.lastVoicedAt=-Infinity;this.voicePresent=false;this.gateOpen=false;this.candidateFrames=0;
+            this.resetVoiceNormalization();this.releaseInstrument();this.updateGains();
+            this.logEvent('quiet-assist-contained',{...guard.snapshot(),continuousSelected:!!this.debugContinuous,continuousOverridden:true});
+            this.debugMeterValue=null;
+        }
     }
 
     resetVoiceNormalization() {
@@ -1934,6 +1969,8 @@ class HarmonySinger {
         this.smoothedPitch = null;
         this.playedPitchTail = [];
         this.voiceLevelGain=null;this.voiceNormalizer=null;this.voiceNormalization={gain:1,proof:false,reason:'stopped'};
+        if(!preserveInput||!this.speakerMode)this.quietAssistContainment=null;
+        this.quietReferenceSpectrum=null;this.quietReferenceAt=-Infinity;
         this.stableMidi = null;
         this.guardCandidates = [];
         this.renderCheckResult();
@@ -1944,6 +1981,9 @@ class HarmonySinger {
 
     startPitchDetection() {
         this.lastDetectAt=0;this.quietVoiceGate=new HarmonyQuietVoice.QuietVoiceGate();
+        if(!this.quietAssistContainment||!this.speakerMode)this.quietAssistContainment=HarmonyQuietVoice.QuietAssistContainment?new HarmonyQuietVoice.QuietAssistContainment():null;
+        else if(!this.quietAssistContainment.latched)this.quietAssistContainment.resetRender();
+        this.quietReferenceSpectrum=null;this.quietReferenceAt=-Infinity;
         const buf = new Float32Array(this.pitchAnalyser.fftSize);
         const detect = () => {
             if (!this.isRunning) return;
@@ -1969,15 +2009,20 @@ class HarmonySinger {
             // thirds configuration. Coherent and instrumental modes retain the
             // original classifier/controller contract, including initial shifts.
             const independentPolicy = this.usesIndependentNearEvidence();
-            const normalizeVoice=independentPolicy&&this.usingCanceller()&&!!this.voiceNormalizer&&['above','below'].includes(this.harmonyPosition);
+            const normalizeVoice=independentPolicy&&this.usingCanceller()&&!!this.voiceNormalizer&&!!this.quietAssistContainment&&['above','below'].includes(this.harmonyPosition);
             const freshAec=!!this.aecStats&&now-(this.aecStatsAt||0)<250;
-            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,quietLevelProof:normalizeVoice&&freshAec&&!this.calibrating,playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
+            const quietEligible=normalizeVoice&&this.quietAssistContainment.status!=='normal-first-excluded'&&!this.quietAssistBlocked();
+            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,quietLevelProof:quietEligible&&freshAec&&!this.calibrating,suppressNearEvidence:this.quietAssistBlocked(),playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;voiced=decision.voiced;
+            this.inspectQuietAssist(now,pitch,decision,freshAec,normalizeVoice);
+            const contained=this.quietAssistBlocked();
+            const voiceLike=!contained&&voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
+            if(contained)voiced=false;
             if(this.isIOS&&this.mic){const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);const target=Math.min(4,Math.max(1,.02/Math.max(rawLevel,.005)));this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup?.2:.025);this.mic.gain.rampTo(this.inputMakeup,.12);}
 
             const voiceSum=Object.values(this.gains).reduce((sum,g)=>sum+Math.max(0,g.gain.value,this.readAudioGain(g)),0);
             const inputGain=Math.max(this.inputMakeup||1,this.readAudioGain(this.mic));
             const appGainFloor=Math.pow(inputGain*voiceSum*2,2); // coherent sum + FX headroom
-            this.voiceNormalization=this.voiceNormalizer?.update({now,rms,enabled:normalizeVoice&&!this.calibrating,
+            this.voiceNormalization=this.voiceNormalizer?.update({now,rms,enabled:normalizeVoice&&this.quietAssistContainment.status==='assist-armed'&&!this.calibrating,
                 freshStats:freshAec,voiced:voiceLike,stable:decision.stable,
                 independentNear:decision.independentNear,playedAmbiguous:decision.matchesPlayed,howl:this.notches.some(n=>n.active),
                 emergency:!!this.loopControl?.emergencyActive||now<(this.loopControl?.emergencyUntil||0),
@@ -1985,6 +2030,8 @@ class HarmonySinger {
                 leak:this.aecStats?.adapted&&!this.aecStats?.suspect?this.aecStats.leak:1,
                 actualGain:this.readAudioGain(this.voiceLevelGain),
                 basePower:Math.max(appGainFloor,this.loopControl?.appGain||1)})||{gain:1,proof:false,reason:'unavailable'};
+            if(this.quietAssistContainment?.status==='normal-first-excluded')this.voiceNormalization.reason='normal-first-excluded';
+            if(contained)this.voiceNormalization.reason='contained-reference-growth';
             const accountedVoiceGain=Math.max(this.voiceNormalization.gain,this.readAudioGain(this.voiceLevelGain));
             this.voiceNormalization.accountedGain=accountedVoiceGain;
             this.applyVoiceNormalizationGain(this.voiceNormalization);
@@ -2014,7 +2061,7 @@ class HarmonySinger {
             // Keep the loop controller/near-end safety estimates normal. Only bypass
             // VAD for tracking the real input, never synthesize a voice or reference.
             const normalVoiced = voiced;
-            if (this.debugContinuous && !this.calibrating) voiced = diagnosticPitch;
+            if (this.debugContinuous && !this.calibrating&&!contained) voiced = diagnosticPitch;
 
             if (voiced) {
                 // Continuity: if the new estimate is an octave/harmonic flip of what we were tracking,
@@ -2059,7 +2106,7 @@ class HarmonySinger {
 
             // Voice presence (both modes) drives instrument note on/off.
             if (voiced && (this.debugContinuous||!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoiceSeen = now;
-            const present = now - this.lastVoiceSeen < 400;
+            const present = !contained&&now - this.lastVoiceSeen < 400;
             if (present !== this.voicePresent) {
                 this.voicePresent = present;
                 if (present) {
@@ -2072,7 +2119,7 @@ class HarmonySinger {
             // Harmony gate (speaker mode): only sing along while a real voice is present.
             if (this.speakerMode) {
                 if (normalVoiced && (!this.pureTone||this.harmonicVoice||decision.allowTonal)) this.lastVoicedAt = now;
-                const shouldOpen = (this.debugContinuous && !this.calibrating) || this.normalHarmonyGate(now);
+                const shouldOpen = !contained&&((this.debugContinuous && !this.calibrating) || this.normalHarmonyGate(now));
                 if (shouldOpen !== this.gateOpen) {
                     this.gateOpen = shouldOpen;
                     this.gateGain.gain.rampTo(shouldOpen ? 1 : 0, shouldOpen ? 0.03 : 0.15);
@@ -2086,7 +2133,7 @@ class HarmonySinger {
             if (now - this.lastStatLog > 500) {
                 this.lastStatLog = now;
                 this.logEvent('stats', {
-                    voiceDecision:decision,voiceNormalization:this.voiceNormalization,inputMakeupGain:this.inputMakeup||1,rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
+                    voiceDecision:decision,quietAssist:this.quietAssistContainment?.snapshot()??null,voiceNormalization:this.voiceNormalization,inputMakeupGain:this.inputMakeup||1,rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
                     gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
                     peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)]),
                     ...(loop && this.aecStats ? { aec: {
