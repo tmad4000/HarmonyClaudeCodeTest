@@ -1,4 +1,4 @@
-/* Device-private debugging. No server, upload, analytics or device identifiers. */
+/* Local debug capture. The separate transfer adapter owns beta upload consent and transport. */
 (() => {
     class DebugSessions {
         constructor(panel) {
@@ -25,33 +25,38 @@
         write(row,remove,chunk){return this.store.write(row,remove,chunk);}
         audio(row){return this.store.audio(row);}
         async prune(){const result=await this.store.prune();if(result.full&&this.recorder)this.limitAudio('storage full: unpin or export · events continue');if(this.activeId&&!(await this.rows()).some(r=>r.id===this.activeId))throw new Error('Not saving · session storage limit');return result;}
-        async startEventsOnly(h,generation) {
+        async startEventsOnly(h,generation,failure=null) {
             if(!this.enabled||!h.isRunning||generation!==this.generation)return;
             const id=crypto.randomUUID(),events=h.getLog().slice(-100).map(e=>JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v))),row={id,started:Date.now(),kind:'events',settings:h.snapshotSettings(),browser:navigator.userAgent,platform:navigator.platform,version:document.querySelector('meta[name="harmony-version"]')?.content,events};
-            this.activeId=id;this.latestId=id;
+            this.activeId=id;this.latestId=id;this.captureFailure=failure;
+            if(failure){row.captureFailure=failure;events.push({type:'debug-recorder-failure',t:Math.round(performance.now()),...failure});}
             const persist=async()=>{try{await this.write({...row,events:events.slice(),bytes:new Blob([JSON.stringify(events)]).size});}catch(_){if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage unavailable');}};
             this.event=e=>{if(events.length<5000)events.push(JSON.parse(JSON.stringify(e,(k,v)=>['deviceId','groupId'].includes(k)?undefined:v)));};
-            this.flush=()=>{if(this.activeId!==id)row.ended=Date.now();return persist();};this.eventTimer=setInterval(persist,5000);
-            await persist();this.status('storage full: unpin or export · events continue');
+            this.flush=()=>{if(this.activeId!==id)row.audioEnded=row.ended=Date.now();return persist();};this.eventTimer=setInterval(persist,5000);
+            await persist();if(this.activeId===id&&generation===this.generation)this.status(failure?'Audio recording unavailable · technical readings continue':'storage full: unpin or export · events continue');
         }
         async start(h) {
             if(this.skip)return;
-            if (!this.enabled || this.recorder || this.starting) return;
-            const generation = ++this.generation; this.starting = true;this.audioLimited=false;
-            let cleanup = () => {};
+            if (!this.enabled || this.activeId || this.recorder || this.starting) return;
+            const generation = ++this.generation; this.starting = true;this.audioLimited=false;this.captureFailure=null;
+            let cleanup = () => {},captureStage=null,captureMime=null,fallback=null;
+            const failure=(stage,error)=>({stage,...(captureMime?{mimeType:captureMime}:{}),errorName:['TypeError','NotSupportedError','NotReadableError','SecurityError','InvalidStateError','AbortError','UnknownError','Error'].includes(error?.name)?error.name:'Error'});
             try {
                 await this.db;
                 const storage=await this.prune();
                 if(storage.full){await this.startEventsOnly(h,generation);return;}
                 if (!this.enabled || !h.isRunning || generation !== this.generation) return;
+                captureStage='capture-graph';
                 const source = h.micSource, limiter = h.limiter;
-                const ctx = h.audioContext, dest = ctx.createMediaStreamDestination(), merger = ctx.createChannelMerger(2);
+                const ctx = h.audioContext;let dest,merger,mic,out;
+                cleanup = () => { for (const n of [mic,out,merger,dest]) { try {n?.disconnect();} catch (_) {} } try {if(mic)source.disconnect(mic);} catch (_) {} try {if(out)Tone.disconnect(limiter,out);} catch (_) {} dest?.stream.getTracks().forEach(t=>t.stop()); };
+                dest=ctx.createMediaStreamDestination();merger=ctx.createChannelMerger(2);mic=ctx.createGain();out=ctx.createGain();
                 // Record raw mic and final mono output separately. Never connect recording to speakers.
-                const mic = ctx.createGain(), out = ctx.createGain();
                 mic.channelCount = out.channelCount = 1; mic.channelCountMode = out.channelCountMode = 'explicit';
-                h.micSource.connect(mic); Tone.connect(h.limiter, out); mic.connect(merger,0,0); out.connect(merger,0,1); merger.connect(dest);
-                cleanup = () => { for (const n of [mic,out,merger,dest]) { try {n.disconnect();} catch (_) {} } try {source.disconnect(mic);} catch (_) {} try {Tone.disconnect(limiter,out);} catch (_) {} dest.stream.getTracks().forEach(t=>t.stop()); };
+                source.connect(mic); Tone.connect(limiter, out); mic.connect(merger,0,0); out.connect(merger,0,1); merger.connect(dest);
+                captureStage='recorder-construct';
                 const mimeType = ['audio/webm;codecs=opus','audio/mp4'].find(t => MediaRecorder.isTypeSupported(t));
+                captureMime=mimeType||null;
                 const rec = this.recorder = new MediaRecorder(dest.stream, mimeType ? {mimeType,audioBitsPerSecond:96000} : {audioBitsPerSecond:96000});
                 const started = Date.now(), id = crypto.randomUUID(); let bytes = 0, index = 0, failed=false;
                 const sanitize=e=>JSON.parse(JSON.stringify(e,(key,value)=>['deviceId','groupId'].includes(key)?undefined:value));
@@ -59,12 +64,20 @@
                 this.activeId=id;this.latestId=id;
                 const row = {id,started,settings,events,bytes:0,mimeType:rec.mimeType,version:document.querySelector('meta[name="harmony-version"]')?.content || 'unavailable',buildTime:document.getElementById('buildTime')?.getAttribute('datetime'),browser:navigator.userAgent};
                 const persist=async(chunk)=>{try{await this.write({...row,events:events.slice(),bytes},false,chunk);}catch(_){failed=true;if(this.activeId===id)this.stop();if(this.latestId===id)this.status('Not saving · storage full or unavailable');}};
-                await this.write({...row});
+                captureStage=null;await this.write({...row});
                 if (!this.enabled || !h.isRunning || generation !== this.generation || this.recorder !== rec) { cleanup(); return; }
                 this.event = e => { if (events.length < 20000) events.push(sanitize(e)); };
-                this.flush=()=>persist();
+                this.flush=()=>{if(this.activeId!==id)row.ended=Date.now();return persist();};
                 this.eventTimer=setInterval(()=>persist(),5000);
                 this.clock=setInterval(()=>{if(this.recorder===rec)this.status('● Debug rec '+Math.floor((Date.now()-started)/60000)+':'+String(Math.floor((Date.now()-started)/1000)%60).padStart(2,'0'));},1000);
+                fallback=async detail=>{
+                    if(!this.enabled||!h.isRunning||generation!==this.generation||this.activeId!==id)return;
+                    this.captureFailure=detail;this.audioLimited=true;row.captureFailure=detail;row.audioEnded=Date.now();
+                    this.event?.({type:'debug-recorder-failure',t:Math.round(performance.now()),...detail});
+                    clearTimeout(this.timer);clearInterval(this.clock);rec.ondataavailable=rec.onstop=rec.onerror=null;
+                    if(this.recorder===rec)this.recorder=null;try{if(rec.state!=='inactive')rec.stop();}catch(_){}cleanup();
+                    await persist();if(this.activeId===id&&generation===this.generation)this.status('Audio recording unavailable · technical readings continue');
+                };
                 rec.ondataavailable = e => {
                     if (e.data.size) { bytes += e.data.size; persist({id:`${id}:${index}`,session:id,index:index++,blob:e.data}); }
                     if (bytes > 20*1024*1024 && this.recorder === rec) this.limitAudio('Audio size limit reached; events continue');
@@ -74,13 +87,21 @@
                     await persist();try{await this.store.prune();}catch(_){}this.finalizing.delete(id);
                     if (!failed && !this.audioLimited && !this.recorder && !this.starting) this.status(this.enabled ? 'Debug session saved · ready for next start' : 'Debug recording OFF · session saved');
                 };
-                rec.onerror = () => { if(this.recorder===rec){this.status('Debug recorder failed');this.stop();} };
-                rec.start(2000); this.status('Debug recording ON · mic + output · this device only');
+                rec.onerror = e => { if(this.recorder===rec)fallback(failure('recorder-runtime',e.error)); };
+                captureStage='recorder-start';rec.start(2000);captureStage=null;
+                if(!this.enabled||!h.isRunning||generation!==this.generation||this.recorder!==rec){try{if(rec.state!=='inactive')rec.stop();}catch(_){}cleanup();return;}
+                if(rec.state!=='recording'){await fallback(failure('recorder-start',{name:'InvalidStateError'}));return;}
+                this.status('Debug recording ON · mic + output · this device only');
                 this.timer = setTimeout(() => this.limitAudio('10 minute audio limit; events continue'), 10*60*1000);
-            } catch (e) { cleanup(); if(generation===this.generation){this.recorder=null;this.activeId=null;this.status('Debug recording unavailable: '+e.message);} } finally { if(generation===this.generation) this.starting=false; }
+            } catch (e) {
+                if(captureStage&&this.enabled&&h.isRunning&&generation===this.generation){
+                    if(fallback)await fallback(failure(captureStage,e));
+                    else{cleanup();this.recorder=null;await this.startEventsOnly(h,generation,failure(captureStage,e));}
+                }else{cleanup();if(generation===this.generation){this.recorder=null;this.activeId=null;this.status('Debug recording unavailable: '+e.message);}}
+            } finally { if(generation===this.generation) this.starting=false; }
         }
         limitAudio(reason) {this.audioLimited=true;clearTimeout(this.timer);clearInterval(this.clock);if(this.recorder?.state==='recording')this.recorder.stop();this.recorder=null;this.status(reason);}
-        stop(reason) { const id=this.activeId,wasRecording=this.recorder?.state==='recording';if(id)this.finalizing.add(id);this.activeId=null; this.audioLimited=false;clearInterval(this.clock);clearInterval(this.eventTimer);const pending=this.flush?.();this.flush=null;if(id&&!wasRecording)Promise.resolve(pending).finally(()=>this.finalizing.delete(id)); this.generation++; this.starting=false; clearTimeout(this.timer); if(reason) this.status(reason+' · capture paused'); this.event = null; if (this.recorder?.state === 'recording') this.recorder.stop(); this.recorder = null; }
+        stop(reason) { const id=this.activeId,wasRecording=this.recorder?.state==='recording';if(id)this.finalizing.add(id);this.activeId=null; this.audioLimited=false;this.captureFailure=null;clearInterval(this.clock);clearInterval(this.eventTimer);const pending=this.flush?.();this.flush=null;if(id&&!wasRecording)Promise.resolve(pending).finally(()=>this.finalizing.delete(id)); this.generation++; this.starting=false; clearTimeout(this.timer); if(reason) this.status(reason+' · capture paused'); this.event = null; if (this.recorder?.state === 'recording') this.recorder.stop(); this.recorder = null; }
         metrics(events) {
             const stats=events.filter(e=>e.type==='stats'),voiced=stats.filter(e=>e.voiced),active=voiced.filter(e=>e.gate);
             const span=events.length?Math.max(1,(events.at(-1).t-events[0].t)/60000):1;

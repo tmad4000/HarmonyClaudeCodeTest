@@ -1,3 +1,11 @@
+## 2026-11-16-capture-readings-1
+
+If audio recording cannot be created, started, or continued, technical debug readings remain available under the same song session. Audio check reports the encoder stage and a bounded error class, recorder availability, supported container types and current recording state. A short message explicitly says when audio is unavailable and only readings continue. Constructor failure creates one events-only song session; later encoder failure preserves the existing ID and any audio already captured. The regular metadata heartbeat can carry these readings even if binary chunks are blocked.
+
+This does not retry or switch codecs, add a second encoder, change the singing graph, gain, microphone constraints, upload credentials or Recording policy. Recording off, the visible notice, skip, cancellation and removal fences still apply. Storage failures stop saving rather than being mistaken for encoder failures. No physical iPhone failure cause or playback fix is claimed.
+
+Validation: generated missing-API, constructor/start/runtime failure, partial graph, cancellation, skip, Off, recovery and storage cases; sandboxed full-app generated-input tests with intercepted Noos verify one mock enrolment, notice before bytes, one session, continued readings, Off and pending/confirmed removal. No real microphone, private audio or public test upload was used. The quiet-level engine prototype is separate and remains held for its feedback review.
+
 ## 2026-11-16-audio-check-telemetry-1
 
 Audio-check readings are included automatically in debug events and session metadata: raw pre-canceller mic and post-limiter output level, processed level, gate/master/trim/voice gains, input makeup, browser family, AudioSession type/state, context, reported route and permitted microphone constraints. Stop retains the last active reading with its original timestamp. Fresh start and Recording off clear that in-memory cache; off-state reads cannot restore it. The route is a browser description, not proof of the physical speaker.
