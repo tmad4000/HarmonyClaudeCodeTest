@@ -6,9 +6,12 @@
  const isBytes=body=>body instanceof ArrayBuffer||ArrayBuffer.isView(body);
  const bytesOf=body=>body instanceof ArrayBuffer?new Uint8Array(body):new Uint8Array(body.buffer,body.byteOffset,body.byteLength);
  const size=body=>isBytes(body)?body.byteLength:body instanceof Blob?body.size:new Blob([JSON.stringify(body)]).size;
- // Older open tabs understand only ready=1 Blob tasks. Keep byte payloads invisible to them.
+ // Fence the whole session from older open tabs, including their Retry path.
+ // ready=2 hides normal discovery; opaque generations also reject old authorize/append.
  const taskPayload=t=>t.data??t.body;
- const payloadReady=t=>['audio','events'].includes(t.type)&&isBytes(taskPayload(t))?2:1;
+ const queueGeneration=row=>{const value=row?.generation;if(row?.formatVersion===2){if(typeof value!=='string'||!/^v2:(0|[1-9][0-9]*)$/.test(value))return null;const n=Number(value.slice(3));return Number.isSafeInteger(n)&&n>=0?n:null;}return (row?.formatVersion===undefined||row.formatVersion===1)&&Number.isSafeInteger(value)&&value>=0?value:null;};
+ const generationTag=n=>'v2:'+n;
+ const payloadReady=t=>t.formatVersion===2||['audio','events'].includes(t.type)&&isBytes(taskPayload(t))?2:1;
  const quota=()=>Object.assign(new Error('Transfer storage limit reached; local Export remains available'),{code:'outbox_limit'});
  class TransferDB {
   constructor(){this.db=new Promise((resolve,reject)=>{const r=indexedDB.open('harmony-noos-transfer-v1',3);r.onupgradeneeded=()=>{
@@ -44,10 +47,32 @@
     });
    });
   });}
+  protectQueue(){return this.mutate((tx,c,u,done,g)=>{
+   let sessionsDone=false,tasksDone=false,changed=0;const finish=()=>{if(sessionsDone&&tasksDone){tx.objectStore('config').put(u,'usage');done(changed);}};
+   const sessions=tx.objectStore('sessions').openCursor();sessions.onsuccess=g(()=>{const cursor=sessions.result;if(!cursor){sessionsDone=true;finish();return;}const s=cursor.value,n=queueGeneration(s);if(n===null){if(s.generation!=='invalid'||s.eligible){cursor.update({...s,generation:'invalid',formatVersion:2,eligible:false});changed++;}}else if(s.formatVersion!==2){cursor.update({...s,generation:generationTag(n),formatVersion:2});changed++;}cursor.continue();});
+   const ts=tx.objectStore('tasks'),legacySessions=new Set();let maxId;
+   // Include protected rows in a mixed session's rekey so their original order is
+   // retained. Bound the second cursor: newly allocated IDs must not be rescanned.
+   const scan=ts.openCursor();scan.onsuccess=g(()=>{const cursor=scan.result;if(cursor){const t=cursor.value;maxId=cursor.key;if(!t.type.startsWith('delete')&&!t.lostOnDevice&&t.formatVersion!==2&&queueGeneration(t)!==null)legacySessions.add(t.session);cursor.continue();return;}
+    if(maxId===undefined){tasksDone=true;finish();return;}
+    const tasks=ts.openCursor(IDBKeyRange.upperBound(maxId));tasks.onsuccess=g(()=>{const cursor=tasks.result;if(!cursor){tasksDone=true;finish();return;}const t=cursor.value;if(!t.type.startsWith('delete')){
+     if(t.lostOnDevice){u.bytes=Math.max(0,u.bytes-(t.bytes||0));cursor.delete();changed++;}
+     else{const n=queueGeneration(t);if(n===null){if(!t.invalidGeneration){cursor.update({...t,generation:'invalid',formatVersion:2,invalidGeneration:true,failed:'invalid queue generation',ready:0});changed++;}}
+      else if(legacySessions.has(t.session)){
+       // Old receipts remove by local ID without checking generation. New local IDs
+       // fence those callbacks; wire IDs, original generations and bytes stay exact.
+       const {id,...payload}=t;ts.add({...payload,generation:generationTag(n),formatVersion:2,ready:t.failed?0:2});cursor.delete();changed++;
+      }else if(!t.failed&&t.ready!==2){cursor.update({...t,ready:2});changed++;}
+     }
+    }cursor.continue();});
+   });
+  });}
   async next(){const db=await this.db;return new Promise((resolve,reject)=>{
-   const index=db.transaction('tasks').objectStore('tasks').index('ready'),candidates=[];let finished=0;
-   const done=t=>{if(t)candidates.push(t);if(++finished===2)resolve(candidates.sort((a,b)=>a.priority-b.priority||a.id-b.id)[0]||null);};
-   for(const ready of [1,2]){const r=index.openCursor(IDBKeyRange.bound([ready],[ready+1],false,true));r.onsuccess=()=>{const c=r.result;if(!c)return done(null);if(c.value.failed||c.value.lostOnDevice){c.continue();return;}done(c.value);};r.onerror=()=>reject(r.error);}
+   const tx=db.transaction(['config','tasks']),control=tx.objectStore('config').get('control');control.onerror=()=>reject(control.error);control.onsuccess=()=>{
+    const config=control.result||{},index=tx.objectStore('tasks').index('ready'),candidates=[];let finished=0;
+    const done=t=>{if(t)candidates.push(t);if(++finished===2)resolve(candidates.sort((a,b)=>a.priority-b.priority||a.id-b.id)[0]||null);};
+    for(const ready of [1,2]){const r=index.openCursor(IDBKeyRange.bound([ready],[ready+1],false,true));r.onsuccess=()=>{const c=r.result;if(!c)return done(null);const t=c.value;if(t.failed||t.lostOnDevice||t.invalidGeneration||(!t.type.startsWith('delete')&&(!config.enabled||config.deletePending||config.tombstones?.['id:'+t.session]||queueGeneration(t)!==config.generation))){c.continue();return;}done(t);};r.onerror=()=>reject(r.error);}
+   };
   });}
   mutate(fn){return this.change(['config','sessions','tasks'],(tx,set,g,abort)=>{const cs=tx.objectStore('config'),r=cs.get('control');r.onsuccess=g(()=>{const c=r.result||{generation:0,enabled:false,epoch:0,block:0,retry:1000},u=cs.get('usage');u.onsuccess=g(()=>fn(tx,c,u.result||{bytes:0,count:0},v=>{cs.put(c,'control');set(v);},g,abort));});});}
   async append(row,chunk,canCreate,metadata,generation){
@@ -56,11 +81,12 @@
    return this.mutate((tx,c,u,done,g)=>{
    if(!c.enabled||c.generation!==generation||c.deletePending||c.tombstones?.['id:'+row.id]){done(false);return;}
    const ss=tx.objectStore('sessions'),ts=tx.objectStore('tasks'),r=ss.get(row.id);r.onsuccess=g(()=>{
-    let s=r.result;const fresh=!s;if(fresh){if(!canCreate){done(false);return;}s={id:row.id,eligible:true,events:0,audio:{},audioBytes:0,created:Date.now(),generation:c.generation,eventStart:(row.events||[]).filter(e=>e.type==='start').at(-1)?.t||0};}
-    if(!s.eligible||s.deleted||s.generation!==c.generation){done(false);return;}
+    let s=r.result;const fresh=!s;if(fresh){if(!canCreate){done(false);return;}s={id:row.id,eligible:true,events:0,audio:{},audioBytes:0,created:Date.now(),generation:generationTag(c.generation),formatVersion:2,eventStart:(row.events||[]).filter(e=>e.type==='start').at(-1)?.t||0};}
+    if(!s.eligible||s.deleted||queueGeneration(s)!==c.generation){done(false);return;}
+    s.generation=generationTag(c.generation);s.formatVersion=2;
     if(s.localPayloadLoss)metadata={...metadata,localPayloadLoss:s.localPayloadLoss};
     const pending=[];s.chunkCount||=0;s.payloadBytes||=0;
-    const add=t=>{const bytes=size(taskPayload(t)??{});if(t.type==='audio'||t.type==='events'){if(s.chunkCount>=256||s.payloadBytes+bytes>30*1024*1024){s.transferLimited=true;return false;}s.chunkCount++;s.payloadBytes+=bytes;}pending.push({...t,session:row.id,generation:c.generation,epoch:null,ready:payloadReady(t),created:Date.now(),bytes});return true;};
+    const add=t=>{const bytes=size(taskPayload(t)??{});if(t.type==='audio'||t.type==='events'){if(s.chunkCount>=256||s.payloadBytes+bytes>30*1024*1024){s.transferLimited=true;return false;}s.chunkCount++;s.payloadBytes+=bytes;}pending.push({...t,session:row.id,generation:generationTag(c.generation),formatVersion:2,epoch:null,ready:2,created:Date.now(),bytes});return true;};
     if(size(metadata)>256*1024)throw Object.assign(new Error('Session metadata exceeds upload cap'),{code:'event_limit'});
     if(fresh)add({priority:1,type:'begin',body:{metadata,complete:false}});
     const events=row.events||[];for(let start=s.events;start<events.length;start+=32){const end=Math.min(events.length,start+32),batch=clean(events.slice(start,end).filter(e=>e.t>=s.eventStart));if(batch.length){const body=new TextEncoder().encode(JSON.stringify(batch));if(body.byteLength>CAP)throw Object.assign(new Error('Diagnostic event exceeds upload cap'),{code:'event_limit'});add({priority:2,type:'events',remote:'events-'+String(start).padStart(6,'0')+'-'+String(end).padStart(6,'0'),body:null,data:body,mime:'application/json'});}s.events=end;}
@@ -76,36 +102,36 @@
    });
   });}
   diagnostic(task,detail){return this.mutate((tx,c,u,done,g)=>{
-   if(!['blob-read','digest','request-build','fetch'].includes(detail.stage)||!c.enabled||c.deletePending||c.generation!==task.generation||c.epoch!==task.epoch||c.tombstones?.['id:'+task.session]){done(false);return;}
+   if(!['blob-read','digest','request-build','fetch'].includes(detail.stage)||!c.enabled||c.deletePending||c.generation!==queueGeneration(task)||c.epoch!==task.epoch||c.tombstones?.['id:'+task.session]){done(false);return;}
    const ss=tx.objectStore('sessions'),ts=tx.objectStore('tasks'),r=ss.get(task.session);r.onsuccess=g(()=>{
-    const s=r.result;if(!s?.eligible||s.deleted||!s.remoteBegun||s.begunEpoch!==c.epoch||!s.metadata||s.generation!==c.generation||s.diagnosticStages?.[detail.lostOnDevice?'lost-on-device':detail.stage]){done(false);return;}
+    const s=r.result;if(!s?.eligible||s.deleted||!s.remoteBegun||s.begunEpoch!==c.epoch||!s.metadata||queueGeneration(s)!==c.generation||s.diagnosticStages?.[detail.lostOnDevice?'lost-on-device':detail.stage]){done(false);return;}
     const q=ts.get(task.id);q.onsuccess=g(()=>{
-     const t=q.result;if(!t||t.failed||!['audio','events'].includes(t.type)||t.generation!==c.generation||t.epoch!==c.epoch){done(false);return;}
+     const t=q.result;if(!t||t.failed||!['audio','events'].includes(t.type)||queueGeneration(t)!==c.generation||t.epoch!==c.epoch){done(false);return;}
      const metadata={...s.metadata,uploadDiagnostic:detail},metadataBytes=size(metadata),body={metadata},bytes=size(body),updates=[];let extra=0,tooLarge=metadataBytes>256*1024||bytes>CAP;
      const ends=ts.index('session').openCursor(IDBKeyRange.only(t.session));ends.onsuccess=g(()=>{
-      const cursor=ends.result;if(cursor){const end=cursor.value;if(['end','heartbeat'].includes(end.type)&&!end.failed&&end.generation===c.generation&&(end.epoch===null||end.epoch===c.epoch)){
+      const cursor=ends.result;if(cursor){const end=cursor.value;if(['end','heartbeat'].includes(end.type)&&!end.failed&&queueGeneration(end)===c.generation&&(end.epoch===null||end.epoch===c.epoch)){
        const nextBody={...end.body,metadata:{...end.body.metadata,uploadDiagnostic:detail}},nextBytes=size(nextBody);if(size(nextBody.metadata)>256*1024||nextBytes>CAP)tooLarge=true;
        extra+=nextBytes-(end.bytes||0);updates.push({...end,body:nextBody,bytes:nextBytes});
       }cursor.continue();return;}
       const total=u.bytes+bytes+metadataBytes-(s.metadataBytes||0)+extra;if(tooLarge||total>QUEUE_CAP){done(false);return;}
       // Same accepted session, JSON only. Omitted flags preserve complete/pinned.
       // Preserve the report through a queued final metadata write; never change chunk bytes.
-      ts.add({priority:1,type:'diagnostic',session:t.session,body,generation:c.generation,epoch:c.epoch,ready:1,created:Date.now(),bytes});updates.forEach(end=>ts.put(end));
+      ts.add({priority:1,type:'diagnostic',session:t.session,body,generation:generationTag(c.generation),formatVersion:2,epoch:c.epoch,ready:2,created:Date.now(),bytes});updates.forEach(end=>ts.put(end));
       s.metadata=metadata;s.metadataBytes=metadataBytes;s.diagnosticStages={...s.diagnosticStages,[detail.lostOnDevice?'lost-on-device':detail.stage]:true};ss.put(s);u.bytes=total;tx.objectStore('config').put(u,'usage');done(true);
      });
     });
    });
   });}
   losePayload(task){return this.mutate((tx,c,u,done,g)=>{
-   if(!c.enabled||c.deletePending||c.generation!==task.generation||c.epoch!==task.epoch||c.tombstones?.['id:'+task.session]){done(false);return;}
+   if(!c.enabled||c.deletePending||c.generation!==queueGeneration(task)||c.epoch!==task.epoch||c.tombstones?.['id:'+task.session]){done(false);return;}
    const ts=tx.objectStore('tasks'),ss=tx.objectStore('sessions'),r=ts.get(task.id);r.onsuccess=g(()=>{
-    const t=r.result;if(!t||t.failed||t.generation!==c.generation||t.epoch!==c.epoch||!['audio','events'].includes(t.type)){done(false);return;}
+    const t=r.result;if(!t||t.failed||queueGeneration(t)!==c.generation||t.epoch!==c.epoch||!['audio','events'].includes(t.type)){done(false);return;}
     const q=ss.get(t.session);q.onsuccess=g(()=>{
-     const s=q.result;if(!s?.eligible||s.deleted||s.generation!==c.generation){done(false);return;}
-     const loss={reason:'lost-on-device',deliveryUnconfirmed:true,chunks:Math.min(256,(s.localPayloadLoss?.chunks||0)+1),bytes:(s.localPayloadLoss?.bytes||0)+(t.bytes||0),at:new Date().toISOString()};
-     s.localPayloadLoss=loss;u.bytes=Math.max(0,u.bytes-(t.bytes||0));ts.put({...t,body:null,data:null,bytes:0,lostBytes:t.bytes||0,lostOnDevice:true,failed:'lost-on-device',ready:0});
+     const s=q.result;if(!s?.eligible||s.deleted||queueGeneration(s)!==c.generation){done(false);return;}
+     const loss={reason:'lost-on-device',deliveryUnconfirmed:true,chunks:Math.min(256,(s.localPayloadLoss?.chunks||0)+1),bytes:(s.localPayloadLoss?.bytes||0)+(t.bytes||0),lastChunk:t.remote,lastKind:t.type,at:new Date().toISOString()};
+     s.localPayloadLoss=loss;u.bytes=Math.max(0,u.bytes-(t.bytes||0));ts.delete(t.id);
      if(s.metadata){const metadata={...s.metadata,localPayloadLoss:loss},n=size(metadata);if(n<=256*1024&&u.bytes+n-(s.metadataBytes||0)<=QUEUE_CAP){u.bytes+=n-(s.metadataBytes||0);s.metadata=metadata;s.metadataBytes=n;}}
-     const updates=ts.index('session').openCursor(IDBKeyRange.only(t.session));updates.onsuccess=g(()=>{const cursor=updates.result;if(cursor){const pending=cursor.value;if(pending.body?.metadata&&!pending.failed&&pending.generation===c.generation){const metadata={...pending.body.metadata,localPayloadLoss:loss},body={...pending.body,metadata},n=size(body);if(size(metadata)<=256*1024&&n<=CAP&&u.bytes+n-(pending.bytes||0)<=QUEUE_CAP){u.bytes+=n-(pending.bytes||0);cursor.update({...pending,body,bytes:n});}}cursor.continue();}else{ss.put(s);tx.objectStore('config').put(u,'usage');done(true);}});
+     const updates=ts.index('session').openCursor(IDBKeyRange.only(t.session));updates.onsuccess=g(()=>{const cursor=updates.result;if(cursor){const pending=cursor.value;if(pending.body?.metadata&&!pending.failed&&queueGeneration(pending)===c.generation){const metadata={...pending.body.metadata,localPayloadLoss:loss},body={...pending.body,metadata},n=size(body);if(size(metadata)<=256*1024&&n<=CAP&&u.bytes+n-(pending.bytes||0)<=QUEUE_CAP){u.bytes+=n-(pending.bytes||0);cursor.update({...pending,body,bytes:n});}}cursor.continue();}else{ss.put(s);tx.objectStore('config').put(u,'usage');done(true);}});
     });
    });
   });}
@@ -126,13 +152,13 @@
   });}
   deleteBarrier(){return this.mutate((tx,c,u,done)=>{c.generation++;c.deleteGeneration=c.generation;delete c.policyResumeOn;c.tombstones={};c.enabled=false;c.deletePending=crypto.randomUUID();tx.objectStore('sessions').clear();tx.objectStore('tasks').clear();tx.objectStore('tasks').add({priority:0,type:'deleteAll',ready:1,operation:c.deletePending,generation:c.generation,bytes:0,created:Date.now()});tx.objectStore('config').put({bytes:0,count:0},'usage');done(c);});}
   // Atomically bind only an existing, still authorized task. Never reinsert a deleted task.
-  authorize(id,owner,bind=true,startAttempt=false){return this.mutate((tx,c,u,done,g)=>{const now=Date.now();if(c.lease&&c.lease.owner!==owner&&c.lease.until>now){done(null);return;}const ts=tx.objectStore('tasks'),r=ts.get(id);r.onsuccess=g(()=>{const t=r.result;if(!t||t.failed||t.lostOnDevice){done(null);return;}const deletion=t.type.startsWith('delete');if(!deletion&&(!c.enabled||c.deletePending||c.tombstones?.['id:'+t.session]||t.generation!==c.generation)){done(null);return;}if(c.block>now){done({blocked:c.block});return;}if(bind){if(!deletion&&t.epoch!==null&&t.epoch!==c.epoch){t.failed='stale epoch';t.ready=0;ts.put(t);done(null);return;}if(t.epoch==null)t.epoch=c.epoch;if(startAttempt){t.attemptCount=Math.min(1000000,(Number.isSafeInteger(t.attemptCount)&&t.attemptCount>=0?t.attemptCount:0)+1);if(!Number.isSafeInteger(t.attemptTrackingStarted)||t.attemptTrackingStarted<0||t.attemptTrackingStarted>now)t.attemptTrackingStarted=now;}ts.put(t);}c.lease={owner,until:now+30000};done({task:t,control:c});});});}
+  authorize(id,owner,bind=true,startAttempt=false){return this.mutate((tx,c,u,done,g)=>{const now=Date.now();if(c.lease&&c.lease.owner!==owner&&c.lease.until>now){done(null);return;}const ts=tx.objectStore('tasks'),r=ts.get(id);r.onsuccess=g(()=>{const t=r.result;if(!t||t.failed||t.lostOnDevice){done(null);return;}const deletion=t.type.startsWith('delete');if(!deletion&&(!c.enabled||c.deletePending||c.tombstones?.['id:'+t.session]||queueGeneration(t)!==c.generation)){done(null);return;}if(c.block>now){done({blocked:c.block});return;}if(bind){if(!deletion&&t.epoch!==null&&t.epoch!==c.epoch){t.failed='stale epoch';t.ready=0;ts.put(t);done(null);return;}if(t.epoch==null)t.epoch=c.epoch;if(startAttempt){t.attemptCount=Math.min(1000000,(Number.isSafeInteger(t.attemptCount)&&t.attemptCount>=0?t.attemptCount:0)+1);if(!Number.isSafeInteger(t.attemptTrackingStarted)||t.attemptTrackingStarted<0||t.attemptTrackingStarted>now)t.attemptTrackingStarted=now;}ts.put(t);}c.lease={owner,until:now+30000};done({task:t,control:c});});});}
   release(owner){return this.mutate((tx,c,u,done)=>{if(c.lease?.owner===owner)delete c.lease;done();});}
   receipt(task,reply){return this.mutate((tx,c,u,done,g)=>{const ts=tx.objectStore('tasks'),r=ts.get(task.id);r.onsuccess=g(()=>{
    if(!r.result){done(false);return;}
    if(['begin','end','heartbeat'].includes(task.type)){
     const ss=tx.objectStore('sessions'),s=ss.get(task.session);s.onsuccess=g(()=>{
-     if(!s.result||s.result.deleted||s.result.generation!==task.generation||c.generation!==task.generation)return;
+     if(!s.result||s.result.deleted||queueGeneration(s.result)!==queueGeneration(task)||c.generation!==queueGeneration(task))return;
      const metadata={...task.body.metadata,...(s.result.localPayloadLoss?{localPayloadLoss:s.result.localPayloadLoss}:{}),...(s.result.metadata?.uploadDiagnostic?{uploadDiagnostic:s.result.metadata.uploadDiagnostic}:{})},metadataBytes=size(metadata);
      u.bytes=Math.max(0,u.bytes-(s.result.metadataBytes||0)+metadataBytes);
      ss.put({...s.result,remoteBegun:true,begunEpoch:task.epoch,metadata,metadataBytes,...(task.type==='heartbeat'?{heartbeatPending:false}:{})});tx.objectStore('config').put(u,'usage');
@@ -143,13 +169,13 @@
   });});}
   defer(error,generation){return this.mutate((tx,c,u,done)=>{if(generation!==undefined&&c.generation!==generation){done(c.block||0);return;}c.retry=Math.max(error.retryAfter||0,Math.min(60000,(c.retry||1000)*2));c.block=Date.now()+c.retry;done(c.block);});}
   permanent(task,message){return this.mutate((tx,c,u,done,g)=>{if(task.session&&!task.type.startsWith('delete')){const ss=tx.objectStore('sessions'),s=ss.get(task.session);s.onsuccess=g(()=>{if(s.result)ss.put({...s.result,eligible:false,failed:message});});}const ts=tx.objectStore('tasks'),r=task.session?ts.index('session').openCursor(IDBKeyRange.only(task.session)):ts.openCursor(IDBKeyRange.only(task.id));r.onsuccess=g(()=>{const x=r.result;if(x){x.update({...x.value,failed:message,ready:0});x.continue();}else done();});});}
-  retryFailed(){return this.mutate((tx,c,u,done,g)=>{const r=tx.objectStore('tasks').openCursor();r.onsuccess=g(()=>{const x=r.result;if(x){if(x.value.failed&&!x.value.lostOnDevice)x.update({...x.value,failed:null,ready:payloadReady(x.value)});x.continue();}else done();});});}
+  retryFailed(){return this.mutate((tx,c,u,done,g)=>{const r=tx.objectStore('tasks').openCursor();r.onsuccess=g(()=>{const x=r.result;if(x){if(x.value.failed&&!x.value.lostOnDevice&&!x.value.invalidGeneration)x.update({...x.value,failed:null,ready:payloadReady(x.value)});x.continue();}else done();});});}
   prune(now=Date.now()){return this.mutate((tx,c,u,done,g)=>{const ss=tx.objectStore('sessions'),r=ss.index('created').openCursor(IDBKeyRange.upperBound(now-AGE));let removed=0;r.onsuccess=g(()=>{const x=r.result;if(!x){tx.objectStore('config').put(u,'usage');done(removed);return;}const q=tx.objectStore('tasks').index('session').openCursor(IDBKeyRange.only(x.value.id));q.onsuccess=g(()=>{const t=q.result;if(t){if(!t.value.type.startsWith('delete')){u.bytes=Math.max(0,u.bytes-(t.value.bytes||0));t.delete();}t.continue();}else{u.bytes=Math.max(0,u.bytes-(x.value.metadataBytes||0));x.delete();u.count=Math.max(0,u.count-1);removed++;x.continue();}});});});}
  }
  class NoosDebugTransfer {
   constructor(debug,endpoint){this.debug=debug;this.endpoint=endpoint.replace(/\/$/,'');this.store=new TransferDB();this.owner=crypto.randomUUID();this.operation=0;this.state='idle';this.accepting=debug.enabled;this.handlesToggle=true;this.writes=Promise.resolve();this.rowGenerations=new Map();this.enableReady=Promise.resolve();this.inventory=debug.rows().then(rows=>new Set(rows.map(r=>r.id)));this.originalWrite=debug.write.bind(debug);this.installUI();
    this.channel=typeof BroadcastChannel==='function'?new BroadcastChannel('harmony-noos-transfer-v1'):null;this.channel?.addEventListener('message',e=>{this.operation++;this.controller?.abort();if(e.data?.off)this.forceOff();this.syncControl().catch(e=>this.failStorage(e));});
-   this.ready=(async()=>{await this.store.control(debug.enabled,debug.preferenceVersion||2);this.channel?.postMessage({changed:true,policyVersion:debug.preferenceVersion||2});if(!debug.enabled)await this.store.cancelUploads(false);await this.store.prune();await this.syncControl();this.revealNotice();this.schedule();})().catch(e=>this.failStorage(e));
+   this.ready=(async()=>{await this.store.control(debug.enabled,debug.preferenceVersion||2);this.channel?.postMessage({changed:true,policyVersion:debug.preferenceVersion||2});if(!debug.enabled)await this.store.cancelUploads(false);if(await this.store.protectQueue())this.channel?.postMessage({changed:true,queueFormatVersion:2});await this.store.prune();await this.syncControl();this.revealNotice();this.schedule();})().catch(e=>this.failStorage(e));
    debug.write=(row,remove=false,chunk=null)=>{const tag=this.rowGenerations.get(row.id)??this.control?.generation??0;this.rowGenerations.set(row.id,tag);const operation=async()=>{await this.ready;const legacy=await this.inventory;const saved=await this.store.get('sessions',row.id),control=await this.store.get('config','control');if(!remove&&(saved?.deleted||control.tombstones?.['id:'+row.id]||(control.deleteGeneration&&(tag<control.deleteGeneration||(legacy.has(row.id)&&!saved)))))return;if(remove){await this.store.tombstone(row.id);this.invalidate();await this.originalWrite(row,true);this.schedule();return;}await this.originalWrite(row,false,chunk);await this.enableReady;if(!this.accepting||!debug.enabled||this.storageFailed)return;const meta=clean({...row,events:undefined,blob:undefined,environment:window.harmonySessionMetadata?.(),app:'harmony',appVersion:row.version||document.querySelector('meta[name="harmony-version"]')?.content,purpose:'debug',recordingPolicyVersion:'2026-11-15-beta-default-on-v2'});const result=await this.store.append(row,chunk,debug.activeId===row.id&&!legacy.has(row.id),meta,this.control.generation);if(result?.limited){this.captureError='Session transfer limit reached; complete audio remains in local Export.';this.failureReason='This session reached the upload limit. Complete audio remains in local Export.';this.state='error';this.status(this.captureError);}this.schedule();};this.writes=this.writes.catch(()=>{}).then(operation).catch(e=>{if(['outbox_limit','event_limit'].includes(e.code)){this.captureError=e.message;this.recordFailure(e);this.state='error';this.status('Not sent: '+e.message);this.schedule();}else this.failStorage(e);});return this.writes;};
    debug.panel.querySelector('input').addEventListener('change',()=>{this.setEnabled(debug.enabled,!!debug.suppressPreferenceWrite).catch(e=>this.failStorage(e));});window.addEventListener('storage',e=>{if(e.key===(debug.preferenceKey||'harmony-debug-v2')&&e.newValue==='off'){this.operation++;this.controller?.abort();this.forceOff();}});window.addEventListener('online',()=>this.schedule());document.addEventListener('visibilitychange',()=>{if(!document.hidden)this.syncControl().then(()=>{if(!this.noticed)this.revealNotice();this.schedule();}).catch(e=>this.failStorage(e));});
    this.maintenance=setInterval(()=>this.store.prune().then(n=>{if(n)this.status('Expired offline debug transfers removed after 30 days.');this.schedule();}).catch(e=>this.failStorage(e)),60000);
@@ -252,7 +278,7 @@
     this.permanentError=this.failureReason+' Local Export remains available.';this.status(this.permanentError);
    }else if(e.name!=='AbortError'){
     this.status(this.accepting?this.failureReason:'Recording off. Pending deletion will retry.');
-    const block=await this.store.defer(e,deleting?undefined:task?.generation).catch(()=>{this.failStorage();return Date.now()+60000;});if(stale())return;this.block=block;
+    const block=await this.store.defer(e,deleting?undefined:queueGeneration(task)).catch(()=>{this.failStorage();return Date.now()+60000;});if(stale())return;this.block=block;
    }
    this.schedule();
   }finally{await this.store.release(this.owner).catch(()=>this.failStorage());this.busy=false;if(!this.timer&&!this.storageFailed){const next=await this.store.next().catch(()=>null);if(next)this.schedule();}}}

@@ -1,3 +1,11 @@
+## 2026-11-16-session-fence-1
+
+An older open tab can no longer revive a locally lost payload or complete a new byte-backed session before its chunks. The entire session now carries a format fence, including JSON metadata. Lost payload tasks leave the runnable queue; their bounded loss summary remains with the session, with delivery unconfirmed. No empty replacement chunks are sent.
+
+On startup, pending legacy work is promoted atomically while preserving its original consent generation, epoch, payload, MIME, remote session/chunk IDs and request limits. Local queue IDs are renewed so a late acknowledgement from an old tab cannot erase protected work. The current uploader can replay the same immutable request and establish acknowledgement proof. Off, removal, backoff, authentication failures and deletion tasks retain their existing rules. No credential, browser identity or database-version reset.
+
+Compatibility tests use the actual historical uploader with real IndexedDB, repeated Retry, held old acknowledgements and intercepted requests. Already-dispatched old requests may still reach the server; the fence prevents new claims, and does not promise retroactive network cancellation. No engine, gain or codec change, new public upload pilot, physical iPhone proof or native build is claimed. The original frozen native byte-storage bundle is unchanged; this fix has a separate reviewed handoff.
+
 ## 2026-11-16-capture-readings-2
 
 If audio recording cannot be constructed, started or continued, technical readings remain in the same song session and the page says audio is unavailable. Audio check reports recorder support, selected MIME, state and a fixed error class/stage. A constructor failure creates one readings-only song session; later failure preserves the existing ID and previously captured bytes, with no second encoder.
