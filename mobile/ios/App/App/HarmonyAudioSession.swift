@@ -308,7 +308,7 @@ extension HarmonyViewController {
       await transfer.store.append(row,{index:0,data:encoded.data,mimeType:encoded.mimeType},true,{fixture:'generated-byte-roundtrip'},control.generation);
       const expected={id,bytes:encoded.data.byteLength,sha256:await digest(encoded.data),mimeType:encoded.mimeType};await transfer.store.config('native-byte-qa',expected);
       const chunks=await all(local,'chunks'),tasks=await all(transfer.store,'tasks');check(chunks.length===1&&isBytes(chunks[0].data)&&noBlob(chunks),'local store retained Blob');check(tasks.some(t=>t.type==='audio')&&tasks.filter(t=>['audio','events'].includes(t.type)).every(t=>isBytes(payload(t))&&isBytes(t.data)&&t.ready===2&&noBlob(t)),'outbox retained Blob');
-      result.expected=expected;result.localByteOnly=true;result.outboxByteOnly=true;result.persistedBeforeProcessStop=true;
+      check(tasks.filter(t=>!t.type.startsWith('delete')).every(t=>t.formatVersion===2&&t.ready===2&&t.generation==='v2:'+control.generation),'whole-session opaque generation/ready2 missing');const session=await transfer.store.get('sessions',id);check(session.formatVersion===2&&session.generation==='v2:'+control.generation,'session generation not protected');result.wholeSessionProtected=true;result.expected=expected;result.localByteOnly=true;result.outboxByteOnly=true;result.persistedBeforeProcessStop=true;
      };
      const reopen=async()=>{
       const expected=await transfer.store.get('config','native-byte-qa');check(expected?.id,'cold fixture missing');const rows=await local.rows(),row=rows.find(r=>r.id===expected.id);check(row,'local row missing after relaunch');
@@ -325,17 +325,17 @@ extension HarmonyViewController {
       await transfer.store.change(['tasks'],tx=>tx.objectStore('tasks').put({...bad,data:undefined,body:new Blob([bytes(payload(bad))],{type:bad.mime}),ready:1}));
       const doomed=new WeakSet(),authorize=transfer.store.authorize.bind(transfer.store);transfer.store.authorize=async(...args)=>{const claim=await authorize(...args);if(claim?.task?.id===bad.id&&claim.task.body instanceof Blob)doomed.add(claim.task.body);return claim;};
       Blob.prototype.arrayBuffer=function(){if(doomed.has(this)){result.injectedLegacyReadAttempts=(result.injectedLegacyReadAttempts||0)+1;return Promise.reject(new DOMException('Synthetic absent backing file','NotFoundError'));}return originalRead.call(this);};
-      try{for(let n=0;n<6;n++){await transfer.drain();if(!await transfer.store.next())break;}const lost=await transfer.store.get('tasks',bad.id);check(lost?.lostOnDevice===true&&lost.failed==='lost-on-device'&&lost.ready===0&&payload(lost)===null&&lost.lostBytes===bad.bytes,'legacy loss not durable terminal');
+      try{for(let n=0;n<6;n++){await transfer.drain();if(!await transfer.store.next())break;}const lost=await transfer.store.get('tasks',bad.id);check(!lost,'lost task not removed');const lossSession=await transfer.store.get('sessions',badId);check(lossSession?.localPayloadLoss?.reason==='lost-on-device'&&lossSession.localPayloadLoss.chunks===1,'session loss ledger missing');
        const before=result.requests.filter(r=>r.lostReport).length;check(before===1,'lost diagnostic not reported exactly once');const expectedSha=await digest(data);check(result.requests.some(r=>r.path.includes('/'+goodId+'/chunks/')&&r.bytes===data.byteLength&&r.sha256===expectedSha&&r.contentType==='audio/webm;codecs=opus'),'healthy later session bytes/hash/MIME incorrect or blocked');check(result.requests.some(r=>r.path.includes('/'+goodId+'/chunks/')&&r.path.endsWith('/'+eventExpected.remote)&&r.bytes===eventExpected.bytes&&r.sha256===eventExpected.sha256&&r.contentType===eventExpected.mime),'healthy successor event bytes/hash/MIME incorrect or blocked');result.healthyEventsAfterLoss=true;check(result.injectedLegacyReadAttempts===1,'legacy payload read repeated');
-       await transfer.store.retryFailed();for(let n=0;n<3;n++)await transfer.drain();const again=await transfer.store.get('tasks',bad.id);check(again?.lostOnDevice&&again.ready===0,'Retry revived lost bytes');check(result.requests.filter(r=>r.lostReport).length===before,'Retry repeated loss report');
+       await transfer.store.retryFailed();for(let n=0;n<3;n++)await transfer.drain();const again=await transfer.store.get('tasks',bad.id);check(!again,'Retry revived lost bytes');check(result.requests.filter(r=>r.lostReport).length===before,'Retry repeated loss report');
        await transfer.store.config('native-loss-qa',{session:badId,taskId:bad.id,kind:lossKind});result.lossTerminalOnce=true;result.lossReports=before;result.healthyAfterLoss=true;result.retryDoesNotRevive=true;result.noReadyTasks=(await transfer.store.next())===null;check(result.noReadyTasks,'unexpected ready FIFO task remains');
       }finally{Blob.prototype.arrayBuffer=originalRead;}
      };
      const recoveryReopen=async()=>{
       const expected=await transfer.store.get('config','native-loss-qa');result.lossKind=expected?.kind;check(expected?.taskId,'cold loss fixture missing');
-      const lost=await transfer.store.get('tasks',expected.taskId);check(lost?.lostOnDevice&&lost.ready===0&&payload(lost)===null,'cold relaunch revived lost task');
+      const lost=await transfer.store.get('tasks',expected.taskId);check(!lost,'cold relaunch revived lost task');
       const session=await transfer.store.get('sessions',expected.session);check(session?.localPayloadLoss?.reason==='lost-on-device','cold loss metadata absent');
-      await transfer.store.retryFailed();await transfer.drain();check((await transfer.store.get('tasks',expected.taskId))?.ready===0,'cold Retry revived loss');check(result.requests.length===0,'cold loss retry re-reported or uploaded');
+      await transfer.store.retryFailed();await transfer.drain();check(!await transfer.store.get('tasks',expected.taskId),'cold Retry revived loss');check(result.requests.length===0,'cold loss retry re-reported or uploaded');
       result.lossSurvivesRelaunch=true;result.noRepeatedReport=true;
      };
      const offHeld=async()=>{
