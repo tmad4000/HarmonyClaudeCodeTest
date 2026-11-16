@@ -1,3 +1,21 @@
+## 2026-11-15-ios-audio-session-1
+
+Harmony now requests the browser's simultaneous playback-and-recording audio session before resuming Web Audio or asking for the microphone. Previously it only read the browser-selected session type. The request is feature-detected; missing or rejected support leaves microphone startup available. Sing still initiates audio resume synchronously in the same user gesture.
+
+Audio check shows the actual audio session type/state and warns when the app destination is muted. Debug sessions retain the session-selection result, session interruptions, destination mute/volume and gate/master gains alongside the existing digital output meter. The meter is before the system output; nonzero digital samples do not establish which physical speaker or headset is playing. No gain boost, gate/feedback weakening, replacement recorder, silent audio loop or native audio-session override is included.
+
+The browser's audio-session request does not let a web page force the iPhone receiver, speaker, Bluetooth profile, hardware volume or silent switch. The native owner separately controls the app's AVAudioSession. Physical iPhone output remains pending a real-device retest; simultaneous microphone/playback is supported by the platform. Upload reachability is investigated separately; existing queue, credentials, consent and removal fences are unchanged.
+
+Validation: independent review and seven sandboxed Chrome cases passed with the default autoplay policy and genuine button clicks. Tests exercise supported/missing/throwing AudioSession APIs, selection before resume/capture, nonzero shifted output, Continuous gate bypass, cancellation/retry, and local-only telemetry/listener cleanup. No physical iPhone speaker, receiver or silent-switch outcome is claimed.
+
+## 2026-11-15-startup-cancel-1
+
+Stopping while microphone startup waited for a device label or audio module could clear the mic node, then let the old startup continue and throw `inputNode.connect` on null. Startup now has an attempt generation checked after asynchronous acquisition and graph setup. Late microphone streams are stopped, late voice/instrument factories release their local resources, and cancellation does not trigger an echo-canceller fallback or revive a stopped graph.
+
+This starts from the shared engine lifecycle fix in reviewed native source a57bdc794951a1895c76f05a37cc069aee41500c. It also clears a rejected AEC loader cache only while that promise still owns the cache, so cancelling a failed load does not poison the next Sing. No DSP tuning, gain, gate thresholds, recording format, upload policy, Swift or native bridge changes are included. The current native build and the website have separate release provenance.
+
+Validation:12 focused sandboxed Chrome cases passed, including real getUserMedia with fake hardware, cancellation at acquisition/label/module/factory boundaries, late-resource cleanup, successful retry and rejected-loader cache ownership; the native owner separately reports actual WebKit capture checks. The precise event that interrupted Jacob's native build 2 remains under telemetry investigation. Physical iPhone output and the remaining quiet-voice/high-feedback limits are not claimed solved by this lifecycle fix. Rollback to quiet-thirds-1 remains available.
+
 ## 2026-11-15-quiet-thirds-1
 
 Quiet singers using Third above, Third below or both with voice backing on speakers can be rejected by an unmeasured room-echo estimate even when pitch tracking accepts their voice. This patch establishes near-end evidence before playback and follows a distinct singer pitch instead of treating the initial room estimate as a measurement. It also distinguishes unknown, speaker-check and learned echo estimates in the debug log.

@@ -34,7 +34,8 @@ class HarmonyViewController: CAPBridgeViewController {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--harmony-smoke"), let content = webView?.configuration.userContentController {
             content.add(self, name: "harmonySmoke")
-            let script = Self.smokeScript.replacingOccurrences(of: "const failureMode=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-mic-failure") ? "const failureMode=true;" : "const failureMode=false;").replacingOccurrences(of: "const realMic=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-real-mic") ? "const realMic=true;" : "const realMic=false;")
+            let selectedScript = ProcessInfo.processInfo.arguments.contains("--harmony-output-probe") ? Self.outputProbeScript : Self.smokeScript
+            let script = selectedScript.replacingOccurrences(of: "const failureMode=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-mic-failure") ? "const failureMode=true;" : "const failureMode=false;").replacingOccurrences(of: "const realMic=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-real-mic") ? "const realMic=true;" : "const realMic=false;")
             content.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         #endif
@@ -204,4 +205,25 @@ extension HarmonyViewController: WKScriptMessageHandler {
     })();
     """#
 }
+#if DEBUG
+extension HarmonyViewController {
+    static let outputProbeScript = #"""
+    (()=>{
+     const result={test:'build4-WK-output-while-real-capture',realCapture:false,syntheticStimulus:true,realUploads:0,requests:[],samples:[],sessionPhases:[],errors:[]};
+     const realFetch=window.fetch.bind(window),realGUM=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);let realStream,oscillators=[],finished=false;
+     window.fetch=async(input,options)=>{const u=typeof input==='string'?input:input.url;if(u.includes('globalbr.ai/api/ingest/harmony/v1')){result.requests.push({path:new URL(u).pathname,method:options?.method||'GET'});return new Response('{"error":"output_probe_no_network"}',{status:503,headers:{'Content-Type':'application/json'}});}return realFetch(input,options);};
+     window.addEventListener('error',e=>result.errors.push(e.message));
+     const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+     const finish=async()=>{if(finished)return;finished=true;try{result.captureLiveAtFinish=realStream?.getAudioTracks().some(t=>t.readyState==='live')===true;result.native=await window.Capacitor.Plugins.HarmonyAudioSession.getRoute();}catch(e){result.errors.push(String(e));}window.harmonySinger?.stop();realStream?.getTracks().forEach(t=>t.stop());oscillators.forEach(o=>{try{o.stop();}catch(_){}});window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
+     const sample=async(phase,ms,direct)=>{const h=window.harmonySinger,c=h.audioContext,start=performance.now();result.sessionPhases.push({phase,point:'start',at:performance.now(),native:await window.Capacitor.Plugins.HarmonyAudioSession.getRoute()});while(performance.now()-start<ms){const levels=h.debugAudioLevels();let directRms=null;if(direct){const x=new Float32Array(direct.fftSize);direct.getFloatTimeDomainData(x);directRms=Math.sqrt(x.reduce((a,v)=>a+v*v,0)/x.length);}result.samples.push({phase,at:performance.now(),time:c.currentTime,...levels,directRms,destinationMute:Tone.getDestination().mute,destinationVolume:Tone.getDestination().volume.value,engine:h.engine,echoMode:h.echoMode,pitch:h.lastPitch,stableMidi:h.stableMidi,masterGain:h.masterGain?.gain?.value,gateGain:h.gateGain?.gain?.value,trimGain:h.trimGain?.gain?.value,extraProtection:h.extraProtection,harmonyVolume:h.harmonyVolume,voiceGains:Object.fromEntries(Object.entries(h.gains).map(([k,v])=>[k,v.gain.value])),sourceContextMatches:h.micSource?.context===c,captureLive:realStream?.getAudioTracks().some(t=>t.readyState==='live')===true,captureMuted:realStream?.getAudioTracks()[0]?.muted,captureEnabled:realStream?.getAudioTracks()[0]?.enabled});await sleep(100);}result.sessionPhases.push({phase,point:'end',at:performance.now(),native:await window.Capacitor.Plugins.HarmonyAudioSession.getRoute()});};
+     window.addEventListener('DOMContentLoaded',()=>{
+      navigator.mediaDevices.getUserMedia=async constraints=>{realStream=await realGUM(constraints);result.realCapture=realStream.getAudioTracks().some(t=>t.readyState==='live');const c=Tone.getContext().rawContext,d=c.createMediaStreamDestination(),mix=c.createGain();mix.gain.value=.04;mix.connect(d);for(const [multiple,weight] of [[1,1],[2,.5],[3,.25]]){const o=c.createOscillator(),g=c.createGain();o.frequency.value=220*multiple;g.gain.value=weight;o.connect(g).connect(mix);o.start();oscillators.push(o);}return d.stream;};
+      setTimeout(async()=>{try{const h=window.harmonySinger;h.setSpeakerMode(true);document.getElementById('startBtn').click();for(let i=0;i<150;i++){if(h.lastError)throw h.lastError;if(h.isRunning&&!h.starting&&!h.calibrating&&window.harmonyNativeRoute?.active)break;await sleep(100);}if(!h.isRunning||h.starting||h.calibrating||!window.harmonyNativeRoute?.active)throw new Error('engine/native activation readiness timeout');result.initialExtraProtection=h.extraProtection;await sample('normal',2000);h.setDebugContinuous(true);await sample('continuous',3500);h.setExtraProtection(true);await sample('continuous-forced-protection',3500);h.setExtraProtection(false);await sample('continuous-web-default-protection',3500);const c=h.audioContext,o=c.createOscillator(),g=c.createGain(),a=c.createAnalyser();o.frequency.value=440;g.gain.value=.005;o.connect(g);g.connect(a);g.connect(c.destination);o.start();oscillators.push(o);await sample('direct-plus-harmony',1000,a);o.stop();g.disconnect();result.lastError=String(h.lastError||'');result.contextAfter={state:c.state,currentTime:c.currentTime};await finish();}catch(e){result.errors.push(String(e?.stack||e));await finish();}},1500);
+     });
+     setTimeout(()=>{result.errors.push('probe deadline');finish();},30000);
+    })();
+    """#
+}
+#endif
+
 #endif

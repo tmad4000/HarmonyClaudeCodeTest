@@ -42,10 +42,6 @@ window.addEventListener('DOMContentLoaded', () => {
  const applyRoute = data => {
   route(data);
   h.setSpeakerMode(data.outputType==='speaker');
-  if(data.outputType==='speaker'){
-   h.setExtraProtection(true);
-   const el=document.getElementById('extraProtection');if(el)el.checked=true;
-  }
  };
  h.start=async function(...args){
   if(starting||h.starting||h.isRunning)return;
