@@ -1,3 +1,13 @@
+## 2026-11-16-browser-runtime-1
+
+Audio check now identifies the reported browser family/version and engine, distinguishing Chrome iOS (CriOS) from Safari and the native app. The engine label explicitly comes from the User-Agent; it is not an engine-build measurement. Actual AudioSession access and session selection remain feature-detected.
+
+A fixed three-byte generated sample checks Blob.arrayBuffer and SHA-256 once locally, without microphone input, an encoder, permissions or network traffic. The Audio check readout and first session metadata include its result and API availability. Passing this tiny sample does not prove a recorded MediaRecorder Blob, a larger allocation, network PUT, or physical audio output works. The existing upload-stage diagnostic still tests real queued chunks and remains unchanged.
+
+Chrome iOS uses a WKWebView-based layer, but API exposure and routing cannot be assumed identical across Safari, Chrome iOS and a native embedder. This release reports observed runtime capabilities rather than claiming physical-device parity. No audio graph, gate, gain, uploader protocol, credentials, consent or native code changes.
+
+Validation: independent review with 12 sandboxed browser cases for UA families, API absence/errors/mismatches, metadata and zero pre-Sing microphone/encoder/network calls. A final copy/screenshot check at 320/390 px verifies the explicit sample qualifier. These are Linux browser checks with selected UA/API mocks, not physical Chrome-iOS/Safari equivalence tests.
+
 ## 2026-11-16-upload-stages-1
 
 Upload failures now identify whether the browser failed while reading a chunk, calculating its SHA-256 checksum, constructing a request, or fetching the server response. A failure report includes the error class, a scrubbed and shortened message, chunk size/type and browser API availability. It contains no audio, request headers or credential values. The generic failure text no longer treats every local exception as a server outage.
