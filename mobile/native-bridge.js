@@ -47,6 +47,8 @@ window.addEventListener('DOMContentLoaded', () => {
   if(starting||h.starting||h.isRunning)return;
   starting=true;const own=++generation;
   captureAttempt=null;attemptContext={contextBefore:contextState(),userActivation:activation(),mediaDevices:!!media,getUserMedia:typeof media?.getUserMedia==='function',secureContext:window.isSecureContext};
+  // Match the reviewed web session selection before the native tap-time resume.
+  try { if(navigator.audioSession)navigator.audioSession.type='play-and-record'; } catch(_) {}
   // Resume Web Audio inside the original tap, before any native promise yields.
   try {
    const audioReady=Promise.resolve(window.Tone?.start()).then(()=>null,error=>error);
