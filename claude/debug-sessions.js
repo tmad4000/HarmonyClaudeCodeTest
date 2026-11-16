@@ -2,7 +2,7 @@
 (() => {
     class DebugSessions {
         constructor(panel) {
-            this.finalizing=new Set(); this.generation = 0; this.starting = false; this.panel = panel; this.preferenceKey='harmony-debug-v2';this.preferenceVersion=2; this.enabled = true; try { this.enabled = localStorage.getItem(this.preferenceKey) !== 'off'; } catch (_) {}
+            this.finalizing=new Set();this.captureConsentGeneration=0; this.generation = 0; this.starting = false; this.panel = panel; this.preferenceKey='harmony-debug-v2';this.preferenceVersion=2; this.enabled = true; try { this.enabled = localStorage.getItem(this.preferenceKey) !== 'off'; } catch (_) {}
             if(new URLSearchParams(location.search).get('debug')==='0') this.enabled=false;
             this.store=new LocalSessionStore('harmony-debug-v1');
             this.db=this.store.db;
@@ -37,7 +37,7 @@
         async start(h) {
             if(this.skip)return;
             if (!this.enabled || this.recorder || this.starting) return;
-            const generation = ++this.generation; this.starting = true;this.audioLimited=false;
+            const generation = ++this.generation,consent=this.captureConsentGeneration; this.starting = true;this.audioLimited=false;
             let cleanup = () => {};
             try {
                 await this.db;
@@ -53,7 +53,7 @@
                 cleanup = () => { for (const n of [mic,out,merger,dest]) { try {n.disconnect();} catch (_) {} } try {source.disconnect(mic);} catch (_) {} try {Tone.disconnect(limiter,out);} catch (_) {} dest.stream.getTracks().forEach(t=>t.stop()); };
                 const mimeType = ['audio/webm;codecs=opus','audio/mp4'].find(t => MediaRecorder.isTypeSupported(t));
                 const rec = this.recorder = new MediaRecorder(dest.stream, mimeType ? {mimeType,audioBitsPerSecond:96000} : {audioBitsPerSecond:96000});
-                const started = Date.now(), id = crypto.randomUUID(); let bytes = 0, index = 0, failed=false;
+                const started = Date.now(), id = crypto.randomUUID(); let bytes = 0, capturedBytes = 0, index = 0, failed=false, pendingChunks=Promise.resolve();
                 const sanitize=e=>JSON.parse(JSON.stringify(e,(key,value)=>['deviceId','groupId'].includes(key)?undefined:value));
                 const events = h.getLog().slice(-100).map(sanitize), settings = h.snapshotSettings();
                 this.activeId=id;this.latestId=id;
@@ -62,17 +62,30 @@
                 await this.write({...row});
                 if (!this.enabled || !h.isRunning || generation !== this.generation || this.recorder !== rec) { cleanup(); return; }
                 this.event = e => { if (events.length < 20000) events.push(sanitize(e)); };
-                this.flush=()=>persist();
+                this.flush=()=>pendingChunks.then(()=>persist());
                 this.eventTimer=setInterval(()=>persist(),5000);
                 this.clock=setInterval(()=>{if(this.recorder===rec)this.status('● Debug rec '+Math.floor((Date.now()-started)/60000)+':'+String(Math.floor((Date.now()-started)/1000)%60).padStart(2,'0'));},1000);
+                const maySave=()=>this.enabled&&consent===this.captureConsentGeneration&&(generation===this.generation&&this.activeId===id||this.finalizing.has(id));
                 rec.ondataavailable = e => {
-                    if (e.data.size) { bytes += e.data.size; persist({id:`${id}:${index}`,session:id,index:index++,blob:e.data}); }
-                    if (bytes > 20*1024*1024 && this.recorder === rec) this.limitAudio('Audio size limit reached; events continue');
+                    if(!e.data.size||!maySave())return;
+                    const part=index++,mimeType=rec.mimeType||e.data.type||row.mimeType;
+                    capturedBytes+=e.data.size;
+                    if(capturedBytes>20*1024*1024){if(this.recorder===rec)this.limitAudio('Audio size limit reached; events continue');return;}
+                    // Read the live encoder Blob now, before it can become a persistent WebKit file reference.
+                    let read;try{read=Promise.resolve(e.data.arrayBuffer());}catch(error){read=Promise.reject(error);}
+                    // Attach a rejection handler immediately, while retaining callback order for persistence.
+                    const materialized=read.then(data=>({data}),error=>({error}));
+                    pendingChunks=pendingChunks.then(async()=>{
+                        const result=await materialized;if(!maySave())return;
+                        if(result.error){const name=['NotFoundError','NotReadableError','InvalidStateError','QuotaExceededError','TypeError','Error'].includes(result.error.name)?result.error.name:'Error';row.captureLoss={reason:'lost-on-device',stage:'capture-materialize',errorName:name,chunks:(row.captureLoss?.chunks||0)+1};events.push({type:'debug-capture-loss',t:Math.round(performance.now()),...row.captureLoss,index:part});await persist();if(this.latestId===id)this.status('Audio could not be saved in this browser; technical readings continue');return;}
+                        const data=new Uint8Array(result.data);bytes+=data.byteLength;
+                        await persist({id:`${id}:${part}`,session:id,index:part,data,mimeType});
+                    });
                 };
                 rec.onstop = async () => {
-                    cleanup(); row.audioEnded=Date.now();
+                    cleanup();await pendingChunks;row.audioEnded=Date.now();
                     await persist();try{await this.store.prune();}catch(_){}this.finalizing.delete(id);
-                    if (!failed && !this.audioLimited && !this.recorder && !this.starting) this.status(this.enabled ? 'Debug session saved · ready for next start' : 'Debug recording OFF · session saved');
+                    if (!failed && !this.audioLimited && !this.recorder && !this.starting && this.latestId===id) this.status(row.captureLoss?'Some audio could not be saved; technical readings are saved':this.enabled ? 'Debug session saved · ready for next start' : 'Debug recording OFF · session saved');
                 };
                 rec.onerror = () => { if(this.recorder===rec){this.status('Debug recorder failed');this.stop();} };
                 rec.start(2000); this.status('Debug recording ON · mic + output · this device only');
@@ -80,7 +93,7 @@
             } catch (e) { cleanup(); if(generation===this.generation){this.recorder=null;this.activeId=null;this.status('Debug recording unavailable: '+e.message);} } finally { if(generation===this.generation) this.starting=false; }
         }
         limitAudio(reason) {this.audioLimited=true;clearTimeout(this.timer);clearInterval(this.clock);if(this.recorder?.state==='recording')this.recorder.stop();this.recorder=null;this.status(reason);}
-        stop(reason) { const id=this.activeId,wasRecording=this.recorder?.state==='recording';if(id)this.finalizing.add(id);this.activeId=null; this.audioLimited=false;clearInterval(this.clock);clearInterval(this.eventTimer);const pending=this.flush?.();this.flush=null;if(id&&!wasRecording)Promise.resolve(pending).finally(()=>this.finalizing.delete(id)); this.generation++; this.starting=false; clearTimeout(this.timer); if(reason) this.status(reason+' · capture paused'); this.event = null; if (this.recorder?.state === 'recording') this.recorder.stop(); this.recorder = null; }
+        stop(reason) {if(!this.enabled)this.captureConsentGeneration++; const id=this.activeId,wasRecording=this.recorder?.state==='recording';if(id)this.finalizing.add(id);this.activeId=null; this.audioLimited=false;clearInterval(this.clock);clearInterval(this.eventTimer);const pending=this.flush?.();this.flush=null;if(id&&!wasRecording)Promise.resolve(pending).finally(()=>this.finalizing.delete(id)); this.generation++; this.starting=false; clearTimeout(this.timer); if(reason) this.status(reason+' · capture paused'); this.event = null; if (this.recorder?.state === 'recording') this.recorder.stop(); this.recorder = null; }
         metrics(events) {
             const stats=events.filter(e=>e.type==='stats'),voiced=stats.filter(e=>e.voiced),active=voiced.filter(e=>e.gate);
             const span=events.length?Math.max(1,(events.at(-1).t-events[0].t)/60000):1;
@@ -101,7 +114,7 @@
                 add('Analyze audio',async()=>{const ctx=new AudioContext();try{const data=await ctx.decodeAudioData(await (await this.audio(r)).arrayBuffer());if(data.numberOfChannels<2)throw new Error('Stereo capture required');const audioMetrics=HarmonySessionMetrics.analyzeEnvelope(data.getChannelData(0),data.getChannelData(1),data.sampleRate);if(r.id!==this.activeId&&!this.finalizing.has(r.id))await this.write({...r,audioMetrics});await this.review();}finally{await ctx.close();}});
                 add('Copy summary',()=>navigator.clipboard.writeText(JSON.stringify({date:new Date(r.started).toISOString(),version:r.version,settings:r.settings,metrics},null,2)));
                 if(r.id!==this.activeId&&!this.finalizing.has(r.id))add(r.keep?'Unkeep':'Keep',async()=>{await this.write({...r,keep:!r.keep});await this.review();});
-                add('Export session',async()=>{const blob=await this.audio(r);const data=await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.readAsDataURL(blob);});const url=URL.createObjectURL(new Blob([JSON.stringify({...r,metrics,audio:data,blob:undefined})],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`harmony-${r.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);});
+                add('Export session',async()=>{const blob=await this.audio(r);const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob);});const url=URL.createObjectURL(new Blob([JSON.stringify({...r,metrics,audio:data,blob:undefined})],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`harmony-${r.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);});
                 const del=document.createElement('button');del.type='button';del.textContent='Delete';del.disabled=r.id===this.activeId||this.finalizing.has(r.id);del.title=del.disabled?'Stop this session before deleting':'';del.onclick=async()=>{await this.write(r,true);await this.review();};row.append(del);const timeline=document.createElement('details'),title=document.createElement('summary'),pre=document.createElement('pre');title.textContent='Event timeline';pre.textContent=(r.events||[]).filter(e=>e.type!=='stats').map(e=>`${e.t}ms ${e.type} ${JSON.stringify(e)}`).join('\n');timeline.append(title,pre);row.append(timeline);list.append(row);
             }
         }

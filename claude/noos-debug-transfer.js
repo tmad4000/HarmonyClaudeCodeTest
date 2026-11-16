@@ -3,7 +3,12 @@
  if(window.HarmonyNoosTransfer)return;
  const CAP=2*1024*1024,AUDIO_CAP=20*1024*1024,QUEUE_CAP=100*1024*1024,SESSION_CAP=200,AGE=30*86400000;
  const clean=v=>JSON.parse(JSON.stringify(v,(k,x)=>['deviceId','groupId','token'].includes(k)?undefined:x));
- const size=body=>body instanceof Blob?body.size:new Blob([JSON.stringify(body)]).size;
+ const isBytes=body=>body instanceof ArrayBuffer||ArrayBuffer.isView(body);
+ const bytesOf=body=>body instanceof ArrayBuffer?new Uint8Array(body):new Uint8Array(body.buffer,body.byteOffset,body.byteLength);
+ const size=body=>isBytes(body)?body.byteLength:body instanceof Blob?body.size:new Blob([JSON.stringify(body)]).size;
+ // Older open tabs understand only ready=1 Blob tasks. Keep byte payloads invisible to them.
+ const taskPayload=t=>t.data??t.body;
+ const payloadReady=t=>['audio','events'].includes(t.type)&&isBytes(taskPayload(t))?2:1;
  const quota=()=>Object.assign(new Error('Transfer storage limit reached; local Export remains available'),{code:'outbox_limit'});
  class TransferDB {
   constructor(){this.db=new Promise((resolve,reject)=>{const r=indexedDB.open('harmony-noos-transfer-v1',3);r.onupgradeneeded=()=>{
@@ -19,7 +24,7 @@
    // One migration scan, never a scan on the recording path.
    let bytes=0,count=0,taskDone=false,sessionDone=false;
    const finish=()=>{if(taskDone&&sessionDone)tx.objectStore('config').put({bytes,count},'usage');};
-   const a=ts.openCursor();a.onsuccess=()=>{const c=a.result;if(c){const t=c.value;t.bytes=size(t.body??{});t.generation??=0;t.epoch??=null;t.ready=t.failed?0:1;t.created??=Date.now();bytes+=t.bytes;c.update(t);c.continue();}else{taskDone=true;finish();}};
+   const a=ts.openCursor();a.onsuccess=()=>{const c=a.result;if(c){const t=c.value;t.bytes=size(taskPayload(t)??{});t.generation??=0;t.epoch??=null;t.ready=t.failed?0:payloadReady(t);t.created??=Date.now();bytes+=t.bytes;c.update(t);c.continue();}else{taskDone=true;finish();}};
    const b=ss.openCursor();b.onsuccess=()=>{const c=b.result;if(c){count++;c.update({...c.value,created:c.value.created||Date.now(),generation:c.value.generation??0});c.continue();}else{sessionDone=true;finish();}};
   };r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
   async change(names,fn){const db=await this.db;return new Promise((resolve,reject)=>{const tx=db.transaction(names,'readwrite');let result,error;const abort=e=>{error=e;try{tx.abort();}catch(_){}};const guard=f=>e=>{try{f(e);}catch(err){abort(err);}};tx.oncomplete=()=>resolve(result);tx.onerror=()=>reject(error||tx.error);tx.onabort=()=>reject(error||tx.error||new Error('Transfer transaction aborted'));try{fn(tx,v=>result=v,guard,abort);}catch(e){abort(e);}});}
@@ -39,19 +44,32 @@
     });
    });
   });}
-  async next(){const db=await this.db;return new Promise((resolve,reject)=>{const r=db.transaction('tasks').objectStore('tasks').index('ready').openCursor(IDBKeyRange.bound([1],[2],false,true));r.onsuccess=()=>{const c=r.result;if(!c)return resolve(null);if(c.value.failed){c.continue();return;}resolve(c.value);};r.onerror=()=>reject(r.error);});}
+  async next(){const db=await this.db;return new Promise((resolve,reject)=>{
+   const index=db.transaction('tasks').objectStore('tasks').index('ready'),candidates=[];let finished=0;
+   const done=t=>{if(t)candidates.push(t);if(++finished===2)resolve(candidates.sort((a,b)=>a.priority-b.priority||a.id-b.id)[0]||null);};
+   for(const ready of [1,2]){const r=index.openCursor(IDBKeyRange.bound([ready],[ready+1],false,true));r.onsuccess=()=>{const c=r.result;if(!c)return done(null);if(c.value.failed||c.value.lostOnDevice){c.continue();return;}done(c.value);};r.onerror=()=>reject(r.error);}
+  });}
   mutate(fn){return this.change(['config','sessions','tasks'],(tx,set,g,abort)=>{const cs=tx.objectStore('config'),r=cs.get('control');r.onsuccess=g(()=>{const c=r.result||{generation:0,enabled:false,epoch:0,block:0,retry:1000},u=cs.get('usage');u.onsuccess=g(()=>fn(tx,c,u.result||{bytes:0,count:0},v=>{cs.put(c,'control');set(v);},g,abort));});});}
-  append(row,chunk,canCreate,metadata,generation){return this.mutate((tx,c,u,done,g)=>{
+  async append(row,chunk,canCreate,metadata,generation){
+   // Compatibility callers may supply a live Blob; no Blob is written by this append path.
+   if(chunk?.blob&&!chunk.data)chunk={...chunk,data:new Uint8Array(await chunk.blob.arrayBuffer()),mimeType:chunk.mimeType||chunk.blob.type};
+   return this.mutate((tx,c,u,done,g)=>{
    if(!c.enabled||c.generation!==generation||c.deletePending||c.tombstones?.['id:'+row.id]){done(false);return;}
    const ss=tx.objectStore('sessions'),ts=tx.objectStore('tasks'),r=ss.get(row.id);r.onsuccess=g(()=>{
     let s=r.result;const fresh=!s;if(fresh){if(!canCreate){done(false);return;}s={id:row.id,eligible:true,events:0,audio:{},audioBytes:0,created:Date.now(),generation:c.generation,eventStart:(row.events||[]).filter(e=>e.type==='start').at(-1)?.t||0};}
     if(!s.eligible||s.deleted||s.generation!==c.generation){done(false);return;}
+    if(s.localPayloadLoss)metadata={...metadata,localPayloadLoss:s.localPayloadLoss};
     const pending=[];s.chunkCount||=0;s.payloadBytes||=0;
-    const add=t=>{const bytes=size(t.body??{});if(t.type==='audio'||t.type==='events'){if(s.chunkCount>=256||s.payloadBytes+bytes>30*1024*1024){s.transferLimited=true;return false;}s.chunkCount++;s.payloadBytes+=bytes;}pending.push({...t,session:row.id,generation:c.generation,epoch:null,ready:1,created:Date.now(),bytes});return true;};
+    const add=t=>{const bytes=size(taskPayload(t)??{});if(t.type==='audio'||t.type==='events'){if(s.chunkCount>=256||s.payloadBytes+bytes>30*1024*1024){s.transferLimited=true;return false;}s.chunkCount++;s.payloadBytes+=bytes;}pending.push({...t,session:row.id,generation:c.generation,epoch:null,ready:payloadReady(t),created:Date.now(),bytes});return true;};
     if(size(metadata)>256*1024)throw Object.assign(new Error('Session metadata exceeds upload cap'),{code:'event_limit'});
     if(fresh)add({priority:1,type:'begin',body:{metadata,complete:false}});
-    const events=row.events||[];for(let start=s.events;start<events.length;start+=32){const end=Math.min(events.length,start+32),batch=clean(events.slice(start,end).filter(e=>e.t>=s.eventStart));if(batch.length){const body=new Blob([JSON.stringify(batch)],{type:'application/json'});if(body.size>CAP)throw Object.assign(new Error('Diagnostic event exceeds upload cap'),{code:'event_limit'});add({priority:2,type:'events',remote:'events-'+String(start).padStart(6,'0')+'-'+String(end).padStart(6,'0'),body,mime:'application/json'});}s.events=end;}
-    if(chunk?.blob&&!s.audio[chunk.index]){for(let part=0;part<Math.ceil(chunk.blob.size/CAP);part++){const body=chunk.blob.slice(part*CAP,(part+1)*CAP);if(s.audioBytes+body.size>AUDIO_CAP){s.audioLimited=true;break;}s.audioBytes+=body.size;add({priority:2,type:'audio',remote:'audio-'+String(chunk.index).padStart(6,'0')+'-'+String(part).padStart(4,'0'),body,mime:row.mimeType||chunk.blob.type||'application/octet-stream'});}s.audio[chunk.index]=true;}
+    const events=row.events||[];for(let start=s.events;start<events.length;start+=32){const end=Math.min(events.length,start+32),batch=clean(events.slice(start,end).filter(e=>e.t>=s.eventStart));if(batch.length){const body=new TextEncoder().encode(JSON.stringify(batch));if(body.byteLength>CAP)throw Object.assign(new Error('Diagnostic event exceeds upload cap'),{code:'event_limit'});add({priority:2,type:'events',remote:'events-'+String(start).padStart(6,'0')+'-'+String(end).padStart(6,'0'),body:null,data:body,mime:'application/json'});}s.events=end;}
+    if(chunk?.data&&!s.audio[chunk.index]){const data=bytesOf(chunk.data);for(let part=0;part<Math.ceil(data.byteLength/CAP);part++){const body=data.slice(part*CAP,(part+1)*CAP);if(s.audioBytes+body.byteLength>AUDIO_CAP){s.audioLimited=true;break;}s.audioBytes+=body.byteLength;add({priority:2,type:'audio',remote:'audio-'+String(chunk.index).padStart(6,'0')+'-'+String(part).padStart(4,'0'),body:null,data:body,mime:chunk.mimeType||row.mimeType||'application/octet-stream'});}s.audio[chunk.index]=true;}
+    // Latest readings can use the already accepted JSON metadata path even when a binary chunk is stuck.
+    // One immutable pending heartbeat per active eligible session, including events after the audio cap.
+    if(!fresh&&s.remoteBegun&&canCreate&&!s.heartbeatPending&&Date.now()-(s.heartbeatAt||s.created)>=5000){
+     add({priority:1,type:'heartbeat',body:{metadata:{...metadata,...(s.metadata?.uploadDiagnostic?{uploadDiagnostic:s.metadata.uploadDiagnostic}:{})}}});s.heartbeatPending=true;s.heartbeatAt=Date.now();
+    }
     if(row.audioEnded&&!s.ended){add({priority:3,type:'end',body:{metadata:{...metadata,...(s.metadata?.uploadDiagnostic?{uploadDiagnostic:s.metadata.uploadDiagnostic}:{}),audioLimited:!!s.audioLimited,transferLimited:!!s.transferLimited},complete:true}});s.ended=true;}
     const bytes=pending.reduce((n,t)=>n+t.bytes,0);if(u.bytes+bytes>QUEUE_CAP||(fresh&&u.count>=SESSION_CAP))throw quota();
     pending.forEach(t=>ts.add(t));ss.put(s);u.bytes+=bytes;if(fresh)u.count++;tx.objectStore('config').put(u,'usage');done({limited:!!s.transferLimited});
@@ -60,12 +78,12 @@
   diagnostic(task,detail){return this.mutate((tx,c,u,done,g)=>{
    if(!['blob-read','digest','request-build','fetch'].includes(detail.stage)||!c.enabled||c.deletePending||c.generation!==task.generation||c.epoch!==task.epoch||c.tombstones?.['id:'+task.session]){done(false);return;}
    const ss=tx.objectStore('sessions'),ts=tx.objectStore('tasks'),r=ss.get(task.session);r.onsuccess=g(()=>{
-    const s=r.result;if(!s?.eligible||s.deleted||!s.remoteBegun||s.begunEpoch!==c.epoch||!s.metadata||s.generation!==c.generation||s.diagnosticStages?.[detail.stage]){done(false);return;}
+    const s=r.result;if(!s?.eligible||s.deleted||!s.remoteBegun||s.begunEpoch!==c.epoch||!s.metadata||s.generation!==c.generation||s.diagnosticStages?.[detail.lostOnDevice?'lost-on-device':detail.stage]){done(false);return;}
     const q=ts.get(task.id);q.onsuccess=g(()=>{
      const t=q.result;if(!t||t.failed||!['audio','events'].includes(t.type)||t.generation!==c.generation||t.epoch!==c.epoch){done(false);return;}
      const metadata={...s.metadata,uploadDiagnostic:detail},metadataBytes=size(metadata),body={metadata},bytes=size(body),updates=[];let extra=0,tooLarge=metadataBytes>256*1024||bytes>CAP;
      const ends=ts.index('session').openCursor(IDBKeyRange.only(t.session));ends.onsuccess=g(()=>{
-      const cursor=ends.result;if(cursor){const end=cursor.value;if(end.type==='end'&&!end.failed&&end.generation===c.generation&&(end.epoch===null||end.epoch===c.epoch)){
+      const cursor=ends.result;if(cursor){const end=cursor.value;if(['end','heartbeat'].includes(end.type)&&!end.failed&&end.generation===c.generation&&(end.epoch===null||end.epoch===c.epoch)){
        const nextBody={...end.body,metadata:{...end.body.metadata,uploadDiagnostic:detail}},nextBytes=size(nextBody);if(size(nextBody.metadata)>256*1024||nextBytes>CAP)tooLarge=true;
        extra+=nextBytes-(end.bytes||0);updates.push({...end,body:nextBody,bytes:nextBytes});
       }cursor.continue();return;}
@@ -73,8 +91,21 @@
       // Same accepted session, JSON only. Omitted flags preserve complete/pinned.
       // Preserve the report through a queued final metadata write; never change chunk bytes.
       ts.add({priority:1,type:'diagnostic',session:t.session,body,generation:c.generation,epoch:c.epoch,ready:1,created:Date.now(),bytes});updates.forEach(end=>ts.put(end));
-      s.metadata=metadata;s.metadataBytes=metadataBytes;s.diagnosticStages={...s.diagnosticStages,[detail.stage]:true};ss.put(s);u.bytes=total;tx.objectStore('config').put(u,'usage');done(true);
+      s.metadata=metadata;s.metadataBytes=metadataBytes;s.diagnosticStages={...s.diagnosticStages,[detail.lostOnDevice?'lost-on-device':detail.stage]:true};ss.put(s);u.bytes=total;tx.objectStore('config').put(u,'usage');done(true);
      });
+    });
+   });
+  });}
+  losePayload(task){return this.mutate((tx,c,u,done,g)=>{
+   if(!c.enabled||c.deletePending||c.generation!==task.generation||c.epoch!==task.epoch||c.tombstones?.['id:'+task.session]){done(false);return;}
+   const ts=tx.objectStore('tasks'),ss=tx.objectStore('sessions'),r=ts.get(task.id);r.onsuccess=g(()=>{
+    const t=r.result;if(!t||t.failed||t.generation!==c.generation||t.epoch!==c.epoch||!['audio','events'].includes(t.type)){done(false);return;}
+    const q=ss.get(t.session);q.onsuccess=g(()=>{
+     const s=q.result;if(!s?.eligible||s.deleted||s.generation!==c.generation){done(false);return;}
+     const loss={reason:'lost-on-device',deliveryUnconfirmed:true,chunks:Math.min(256,(s.localPayloadLoss?.chunks||0)+1),bytes:(s.localPayloadLoss?.bytes||0)+(t.bytes||0),at:new Date().toISOString()};
+     s.localPayloadLoss=loss;u.bytes=Math.max(0,u.bytes-(t.bytes||0));ts.put({...t,body:null,data:null,bytes:0,lostBytes:t.bytes||0,lostOnDevice:true,failed:'lost-on-device',ready:0});
+     if(s.metadata){const metadata={...s.metadata,localPayloadLoss:loss},n=size(metadata);if(n<=256*1024&&u.bytes+n-(s.metadataBytes||0)<=QUEUE_CAP){u.bytes+=n-(s.metadataBytes||0);s.metadata=metadata;s.metadataBytes=n;}}
+     const updates=ts.index('session').openCursor(IDBKeyRange.only(t.session));updates.onsuccess=g(()=>{const cursor=updates.result;if(cursor){const pending=cursor.value;if(pending.body?.metadata&&!pending.failed&&pending.generation===c.generation){const metadata={...pending.body.metadata,localPayloadLoss:loss},body={...pending.body,metadata},n=size(body);if(size(metadata)<=256*1024&&n<=CAP&&u.bytes+n-(pending.bytes||0)<=QUEUE_CAP){u.bytes+=n-(pending.bytes||0);cursor.update({...pending,body,bytes:n});}}cursor.continue();}else{ss.put(s);tx.objectStore('config').put(u,'usage');done(true);}});
     });
    });
   });}
@@ -95,24 +126,24 @@
   });}
   deleteBarrier(){return this.mutate((tx,c,u,done)=>{c.generation++;c.deleteGeneration=c.generation;delete c.policyResumeOn;c.tombstones={};c.enabled=false;c.deletePending=crypto.randomUUID();tx.objectStore('sessions').clear();tx.objectStore('tasks').clear();tx.objectStore('tasks').add({priority:0,type:'deleteAll',ready:1,operation:c.deletePending,generation:c.generation,bytes:0,created:Date.now()});tx.objectStore('config').put({bytes:0,count:0},'usage');done(c);});}
   // Atomically bind only an existing, still authorized task. Never reinsert a deleted task.
-  authorize(id,owner,bind=true){return this.mutate((tx,c,u,done,g)=>{const now=Date.now();if(c.lease&&c.lease.owner!==owner&&c.lease.until>now){done(null);return;}const ts=tx.objectStore('tasks'),r=ts.get(id);r.onsuccess=g(()=>{const t=r.result;if(!t||t.failed){done(null);return;}const deletion=t.type.startsWith('delete');if(!deletion&&(!c.enabled||c.deletePending||c.tombstones?.['id:'+t.session]||t.generation!==c.generation)){done(null);return;}if(c.block>now){done({blocked:c.block});return;}if(bind){if(!deletion&&t.epoch!==null&&t.epoch!==c.epoch){t.failed='stale epoch';t.ready=0;ts.put(t);done(null);return;}if(t.epoch==null)t.epoch=c.epoch;ts.put(t);}c.lease={owner,until:now+30000};done({task:t,control:c});});});}
+  authorize(id,owner,bind=true,startAttempt=false){return this.mutate((tx,c,u,done,g)=>{const now=Date.now();if(c.lease&&c.lease.owner!==owner&&c.lease.until>now){done(null);return;}const ts=tx.objectStore('tasks'),r=ts.get(id);r.onsuccess=g(()=>{const t=r.result;if(!t||t.failed||t.lostOnDevice){done(null);return;}const deletion=t.type.startsWith('delete');if(!deletion&&(!c.enabled||c.deletePending||c.tombstones?.['id:'+t.session]||t.generation!==c.generation)){done(null);return;}if(c.block>now){done({blocked:c.block});return;}if(bind){if(!deletion&&t.epoch!==null&&t.epoch!==c.epoch){t.failed='stale epoch';t.ready=0;ts.put(t);done(null);return;}if(t.epoch==null)t.epoch=c.epoch;if(startAttempt){t.attemptCount=Math.min(1000000,(Number.isSafeInteger(t.attemptCount)&&t.attemptCount>=0?t.attemptCount:0)+1);if(!Number.isSafeInteger(t.attemptTrackingStarted)||t.attemptTrackingStarted<0||t.attemptTrackingStarted>now)t.attemptTrackingStarted=now;}ts.put(t);}c.lease={owner,until:now+30000};done({task:t,control:c});});});}
   release(owner){return this.mutate((tx,c,u,done)=>{if(c.lease?.owner===owner)delete c.lease;done();});}
   receipt(task,reply){return this.mutate((tx,c,u,done,g)=>{const ts=tx.objectStore('tasks'),r=ts.get(task.id);r.onsuccess=g(()=>{
    if(!r.result){done(false);return;}
-   if(['begin','end'].includes(task.type)){
+   if(['begin','end','heartbeat'].includes(task.type)){
     const ss=tx.objectStore('sessions'),s=ss.get(task.session);s.onsuccess=g(()=>{
      if(!s.result||s.result.deleted||s.result.generation!==task.generation||c.generation!==task.generation)return;
-     const metadata={...task.body.metadata,...(s.result.metadata?.uploadDiagnostic?{uploadDiagnostic:s.result.metadata.uploadDiagnostic}:{})},metadataBytes=size(metadata);
+     const metadata={...task.body.metadata,...(s.result.localPayloadLoss?{localPayloadLoss:s.result.localPayloadLoss}:{}),...(s.result.metadata?.uploadDiagnostic?{uploadDiagnostic:s.result.metadata.uploadDiagnostic}:{})},metadataBytes=size(metadata);
      u.bytes=Math.max(0,u.bytes-(s.result.metadataBytes||0)+metadataBytes);
-     ss.put({...s.result,remoteBegun:true,begunEpoch:task.epoch,metadata,metadataBytes});tx.objectStore('config').put(u,'usage');
+     ss.put({...s.result,remoteBegun:true,begunEpoch:task.epoch,metadata,metadataBytes,...(task.type==='heartbeat'?{heartbeatPending:false}:{})});tx.objectStore('config').put(u,'usage');
     });
    }
    if(task.type==='deleteAll'){if(c.deletePending!==task.operation){done(false);return;}c.epoch=reply.epoch;c.deletePending=null;if(c.policyResumeOn)c.enabled=true;delete c.policyResumeOn;const d=tx.objectStore('config').get('device');d.onsuccess=g(()=>{if(d.result)tx.objectStore('config').put({...d.result,epoch:reply.epoch},'device');});}
-   u.bytes=Math.max(0,u.bytes-(r.result.bytes||0));ts.delete(task.id);c.block=0;c.retry=1000;tx.objectStore('config').put(u,'usage');done(true);
+   u.bytes=Math.max(0,u.bytes-(r.result.bytes||0));ts.delete(task.id);if(!['heartbeat','diagnostic'].includes(task.type)){c.block=0;c.retry=1000;}tx.objectStore('config').put(u,'usage');done(true);
   });});}
   defer(error,generation){return this.mutate((tx,c,u,done)=>{if(generation!==undefined&&c.generation!==generation){done(c.block||0);return;}c.retry=Math.max(error.retryAfter||0,Math.min(60000,(c.retry||1000)*2));c.block=Date.now()+c.retry;done(c.block);});}
   permanent(task,message){return this.mutate((tx,c,u,done,g)=>{if(task.session&&!task.type.startsWith('delete')){const ss=tx.objectStore('sessions'),s=ss.get(task.session);s.onsuccess=g(()=>{if(s.result)ss.put({...s.result,eligible:false,failed:message});});}const ts=tx.objectStore('tasks'),r=task.session?ts.index('session').openCursor(IDBKeyRange.only(task.session)):ts.openCursor(IDBKeyRange.only(task.id));r.onsuccess=g(()=>{const x=r.result;if(x){x.update({...x.value,failed:message,ready:0});x.continue();}else done();});});}
-  retryFailed(){return this.mutate((tx,c,u,done,g)=>{const r=tx.objectStore('tasks').openCursor();r.onsuccess=g(()=>{const x=r.result;if(x){if(x.value.failed)x.update({...x.value,failed:null,ready:1});x.continue();}else done();});});}
+  retryFailed(){return this.mutate((tx,c,u,done,g)=>{const r=tx.objectStore('tasks').openCursor();r.onsuccess=g(()=>{const x=r.result;if(x){if(x.value.failed&&!x.value.lostOnDevice)x.update({...x.value,failed:null,ready:payloadReady(x.value)});x.continue();}else done();});});}
   prune(now=Date.now()){return this.mutate((tx,c,u,done,g)=>{const ss=tx.objectStore('sessions'),r=ss.index('created').openCursor(IDBKeyRange.upperBound(now-AGE));let removed=0;r.onsuccess=g(()=>{const x=r.result;if(!x){tx.objectStore('config').put(u,'usage');done(removed);return;}const q=tx.objectStore('tasks').index('session').openCursor(IDBKeyRange.only(x.value.id));q.onsuccess=g(()=>{const t=q.result;if(t){if(!t.value.type.startsWith('delete')){u.bytes=Math.max(0,u.bytes-(t.value.bytes||0));t.delete();}t.continue();}else{u.bytes=Math.max(0,u.bytes-(x.value.metadataBytes||0));x.delete();u.count=Math.max(0,u.count-1);removed++;x.continue();}});});});}
  }
  class NoosDebugTransfer {
@@ -143,7 +174,9 @@
    const scrub=value=>{let text=typeof value==='string'?value:'';for(const token of [this.device?.token,savedToken])if(token)text=text.split(token).join('[credential]');return text.replace(/\bBearer\s+[^\s,;]+/gi,'Bearer [credential]').replace(/hdi_[^\s"'<>]+/gi,'[credential]').replace(/(?:https?:\/\/|blob:|data:)[^\s"'<>]+/gi,'[URL]').replace(/(?:authorization|cookie|x-api-key)\s*[:=][^\n]+/gi,'[credential]').replace(/[A-Za-z0-9_+\/=\-]{40,}/g,'[redacted]').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,160);};
    const names=['Error','TypeError','RangeError','SyntaxError','AbortError','NotSupportedError','NotReadableError','SecurityError','DataCloneError','OperationError','InvalidStateError','QuotaExceededError','NetworkError','NotAllowedError','NotFoundError','UnknownError','InvalidAccessError','DataError','TimeoutError'];
    let subtleDigest=false;try{subtleDigest=typeof crypto.subtle?.digest==='function';}catch(_){}
-   return {stage:error.uploadStage,errorName:names.includes(error.name)?error.name:'Error',message:scrub(error.message),chunkBytes:Number.isSafeInteger(task.body?.size)?task.body.size:null,kind:['audio','events'].includes(task.type)?task.type:null,blobType:scrub(task.body?.type),contentType:scrub(task.mime),secureContext:!!window.isSecureContext,blobArrayBuffer:typeof Blob.prototype.arrayBuffer==='function',subtleDigest,at:new Date().toISOString()};
+   const now=Date.now(),number=(value,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger(value)&&value>=0&&value<=max?value:null;
+   // Counts start when this instrumentation first attempts a task; never invent legacy retry history.
+   return {stage:error.uploadStage,errorName:names.includes(error.name)?error.name:'Error',message:scrub(error.message),chunkBytes:['audio','events'].includes(task.type)?number(size(taskPayload(task))):null,taskBytes:number(task.bytes),kind:['audio','events','begin','end','diagnostic','heartbeat','delete','deleteAll'].includes(task.type)?task.type:null,attemptCount:number(task.attemptCount,1000000),attemptTrackingStartedAt:number(task.attemptTrackingStarted,now)!==null?new Date(task.attemptTrackingStarted).toISOString():null,taskAgeMs:number(task.created)!==null?Math.max(0,now-task.created):null,blobType:scrub(taskPayload(task) instanceof Blob?taskPayload(task).type:''),contentType:scrub(['audio','events'].includes(task.type)?task.mime||taskPayload(task)?.type||'application/octet-stream':'application/json'),secureContext:!!window.isSecureContext,blobArrayBuffer:typeof Blob.prototype.arrayBuffer==='function',subtleDigest,at:new Date(now).toISOString(),...(error.uploadStage==='blob-read'&&error.name==='NotFoundError'?{lostOnDevice:true}:{})};
   }
   async queueFailure(task,error){
    if(!task||!['audio','events'].includes(task.type)||error.name==='AbortError'||error.status||!this.accepting||!this.debug.enabled||!this.noticed)return;
@@ -153,7 +186,8 @@
   recordFailure(error={},task){
    const status=Number.isInteger(error.status)&&error.status>=100&&error.status<=599?error.status:null;
    let reason;
-   if(error.code==='upload_timeout')reason='Sending timed out after 20 seconds. This recording stays here and will retry.';
+   if(error.uploadStage==='blob-read'&&error.name==='NotFoundError')reason='The local copy of one recording part is unavailable; delivery could not be confirmed. Other parts and new sessions can still send.';
+   else if(error.code==='upload_timeout')reason='Sending timed out after 20 seconds. This recording stays here and will retry.';
    else if(error.code==='local_storage')reason='This browser could not save the upload queue. Local Export still works.';
    else if(error.code==='event_limit')reason='The diagnostic data is too large to send. Local Export still works.';
    else if(error.code==='storage_pending')reason='The server is still checking whether the upload was saved. Sending will retry safely.';
@@ -161,7 +195,7 @@
    else if(/acknowledgement|checksum/i.test(error.message||''))reason='The server reply did not confirm the recording correctly. Sending has stopped.';
    else if(/deletion cleanup pending/i.test(error.message||''))reason='Access has ended; the server is still removing the stored file.';
    else reason=({400:'The server rejected this recording’s data.',401:'The server did not accept this browser’s upload credential.',403:'The server refused uploads from this browser.',404:'The server could not find this recording.',409:'The server rejected a conflicting recording upload.',410:'This recording was removed or expired on the server.',413:'This recording is too large to send.',415:'The server does not support this audio format.',422:'The server reply could not be verified.',429:'The upload limit was reached. Sending will retry later.',503:'The upload server is unavailable. Sending will retry.',507:'The server’s recording storage is full.'})[status]||(navigator.onLine===false?'This device is offline. Sending will retry when it reconnects.':'Sending failed at an unknown stage. Local Export is available; sending will retry.');
-   const detail=this.failureDetail(error,task);if(detail){const labels={'blob-read':'Reading the recording in this browser','digest':'Preparing the secure upload checksum','request-build':'Preparing the upload request','fetch':'Connecting to the upload server'};reason=error.status||error.code==='upload_timeout'?reason+' Stage: '+detail.stage+'.':labels[detail.stage]+' failed ('+detail.errorName+'). The recording stays here; sending will retry.';}
+   const detail=this.failureDetail(error,task);if(detail&&!detail.lostOnDevice){const labels={'blob-read':'Reading the recording in this browser','digest':'Preparing the secure upload checksum','request-build':'Preparing the upload request','fetch':'Connecting to the upload server'};reason=error.status||error.code==='upload_timeout'?reason+' Stage: '+detail.stage+'.':labels[detail.stage]+' failed ('+detail.errorName+'). The recording stays here; sending will retry.';}
    this.failureReason=reason;
    const allowed=['invalid_token','chunk_conflict','stale_epoch','payload_too_large','metadata_limit','chunk_limit','storage_pending','rate_limit','session_limit','checksum_mismatch','invalid_audio_mime','deleted','not_found','local_storage','outbox_limit','event_limit','upload_timeout'];
    const code=allowed.includes(error.code)?error.code:status?'http_'+status:'network_or_protocol';
@@ -188,12 +222,13 @@
   async drain(){if(this.busy||this.storageFailed)return;this.busy=true;let task,removalMessage,taskOperation;try{await this.ready;await this.syncControl();while((task=await this.store.next())){
     let claim=await this.store.authorize(task.id,this.owner,false);if(!claim){this.schedule(1000);break;}if(claim.blocked){this.block=claim.blocked;this.schedule();break;}task=claim.task;const deleting=task.type.startsWith('delete'),operation=this.operation;taskOperation=operation;
     if(!deleting&&(!this.accepting||!this.debug.enabled||!this.noticed))break;
-    if(!this.device?.token){if(task.type==='diagnostic'){await this.store.remove(task.id);continue;}if(deleting){await this.store.receipt(task,{epoch:claim.control.epoch});this.status('Removed local copies. No server device was enrolled.');continue;}await this.enroll();}
+    if(!this.device?.token){if(['diagnostic','heartbeat'].includes(task.type)){await this.store.remove(task.id);continue;}if(deleting){await this.store.receipt(task,{epoch:claim.control.epoch});this.status('Removed local copies. No server device was enrolled.');continue;}await this.enroll();}
     // Enrollment, credential persistence and tab changes may revoke the original task.
-    claim=await this.store.authorize(task.id,this.owner);if(!claim||claim.blocked||(!deleting&&(operation!==this.operation||!this.accepting||!this.debug.enabled||!this.noticed)))continue;
+    claim=await this.store.authorize(task.id,this.owner,true,true);if(!claim||claim.blocked||(!deleting&&(operation!==this.operation||!this.accepting||!this.debug.enabled||!this.noticed)))continue;
     task=claim.task;this.device=await this.store.get('config','device');let digest;
-    if(task.body instanceof Blob){
-     let buffer;try{if(task.body.size>(this.device.limits.chunkBytes||this.device.limits.request_bytes||CAP))throw Object.assign(new Error('Negotiated request cap exceeded'),{status:413});buffer=await task.body.arrayBuffer();}catch(e){throw this.stageError(e,'blob-read');}
+    let buffer;const payload=taskPayload(task),binary=['audio','events'].includes(task.type);
+    if(binary){
+     try{if(size(payload)>(this.device.limits.chunkBytes||this.device.limits.request_bytes||CAP))throw Object.assign(new Error('Negotiated request cap exceeded'),{status:413});buffer=isBytes(payload)?bytesOf(payload).slice().buffer:await payload.arrayBuffer();}catch(e){throw this.stageError(e,'blob-read');}
      claim=await this.store.authorize(task.id,this.owner);if(!claim||claim.blocked||operation!==this.operation||!this.accepting||!this.debug.enabled||!this.noticed)continue;
      try{digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buffer)),n=>n.toString(16).padStart(2,'0')).join('');}catch(e){throw this.stageError(e,'digest');}
     }
@@ -201,15 +236,16 @@
     task=claim.task;this.state=deleting?'deleting':'sending';const headers={'X-Upload-Epoch':String(task.epoch)};let reply;
     if(task.type==='deleteAll'){reply=await this.request('/sessions','DELETE',{operationId:task.operation},headers);this.checkDeletion(reply);}
     else if(task.type==='delete'){reply=await this.request('/sessions/'+task.session,'DELETE',undefined,headers);this.checkDeletion(reply);}
-    else if(task.type==='audio'||task.type==='events'){if(task.body.size>(this.device.limits.chunkBytes||this.device.limits.request_bytes||CAP))throw Object.assign(new Error('Negotiated request cap exceeded'),{status:413});reply=await this.request('/sessions/'+task.session+'/chunks/'+task.remote,'PUT',task.body,{...headers,'Content-Type':task.mime,'X-Chunk-Kind':task.type});if(reply.id!==task.remote||reply.bytes!==task.body.size||reply.sha256!==digest)throw Object.assign(new Error('Chunk acknowledgement mismatch'),{status:409});}
+    else if(task.type==='audio'||task.type==='events'){if(size(payload)>(this.device.limits.chunkBytes||this.device.limits.request_bytes||CAP))throw Object.assign(new Error('Negotiated request cap exceeded'),{status:413});reply=await this.request('/sessions/'+task.session+'/chunks/'+task.remote,'PUT',new Blob([buffer],{type:task.mime}),{...headers,'Content-Type':task.mime,'X-Chunk-Kind':task.type});if(reply.id!==task.remote||reply.bytes!==size(taskPayload(task))||reply.sha256!==digest)throw Object.assign(new Error('Chunk acknowledgement mismatch'),{status:409});}
     else{reply=await this.request('/sessions/'+task.session,'PUT',task.body,headers);if(reply.id!==task.session||reply.epoch!==task.epoch||reply.saved!==true)throw Object.assign(new Error('Session acknowledgement mismatch'),{status:409});}
-    if(task.type!=='diagnostic'){this.limitError=false;if(!this.permanentError&&!this.captureError)this.failureReason=null;}const acknowledged=await this.store.receipt(task,reply);if(deleting&&acknowledged){removalMessage=this.removalSummary(task,reply);this.status(removalMessage);}this.block=0;
-   }if(this.accepting){this.state=this.captureError||this.permanentError?'error':navigator.onLine?'idle':'offline';this.status(this.captureError||this.permanentError||removalMessage|| (navigator.onLine?'Beta diagnostics sent privately to Ideaflow.':'Recording · will send when online'));}
+    if(!['diagnostic','heartbeat'].includes(task.type)){this.limitError=false;if(!this.permanentError&&!this.captureError)this.failureReason=null;}const acknowledged=await this.store.receipt(task,reply);if(deleting&&acknowledged){removalMessage=this.removalSummary(task,reply);this.status(removalMessage);}this.block=0;
+   }if(this.accepting){this.state=this.captureError||this.permanentError||this.failureReason?'error':navigator.onLine?'idle':'offline';this.status(this.captureError||this.permanentError||this.failureReason||removalMessage|| (navigator.onLine?'Beta diagnostics sent privately to Ideaflow.':'Recording · will send when online'));}
   }catch(e){
    const deleting=task?.type.startsWith('delete'),stale=()=>!!task&&!deleting&&(taskOperation!==this.operation||!this.accepting||!this.debug.enabled||!this.noticed);
    if(stale())return;
    if(task&&!deleting){const claim=await this.store.authorize(task.id,this.owner,false).catch(()=>null);if(!claim||claim.blocked||stale())return;}
    if(e.name!=='AbortError'){this.recordFailure(e,task);await this.queueFailure(task,e).catch(()=>{});if(stale())return;}
+   if(task&&['audio','events'].includes(task.type)&&e.uploadStage==='blob-read'&&e.name==='NotFoundError'){const lost=await this.store.losePayload(task).catch(()=>{this.failStorage();return false;});if(stale())return;if(lost){this.state='error';this.status(this.failureReason);this.schedule(0);}return;}
    this.limitError=[413,429,507].includes(e.status);this.state=this.accepting?'error':'off';
    if(task&&[400,401,403,404,409,410,413,415,422,507].includes(e.status)){
     await this.store.permanent(task,'HTTP '+e.status).catch(()=>this.failStorage());if(stale())return;

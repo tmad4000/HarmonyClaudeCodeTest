@@ -1,5 +1,5 @@
 /* Shared device-local session store. No networking, analytics or dependencies.
- * Vendored byte-for-byte by Breathe and Harmony. */
+ * Harmony reads byte-backed chunks as well as legacy Blobs; retention semantics are unchanged. */
 (() => {
   class LocalSessionStore {
     constructor(namespace, {retentionDays = 14, maxBytes = 104857600} = {}) {
@@ -29,7 +29,7 @@
     async audio(row) {
       if(row.blob)return row.blob;
       const db=await this.db;
-      return new Promise((resolve,reject)=>{const r=db.transaction('chunks').objectStore('chunks').index('session').getAll(row.id);r.onsuccess=()=>resolve(new Blob(r.result.sort((a,b)=>a.index-b.index).map(x=>x.blob),{type:row.mimeType}));r.onerror=()=>reject(r.error);});
+      return new Promise((resolve,reject)=>{const r=db.transaction('chunks').objectStore('chunks').index('session').getAll(row.id);r.onsuccess=()=>resolve(new Blob(r.result.sort((a,b)=>a.index-b.index).map(x=>x.data??x.blob),{type:row.mimeType}));r.onerror=()=>reject(r.error);});
     }
     async prune() {
       const rows=await this.rows(), cutoff=Date.now()-this.retentionMs;

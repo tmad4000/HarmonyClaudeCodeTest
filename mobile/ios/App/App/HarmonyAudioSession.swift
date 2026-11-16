@@ -34,9 +34,14 @@ class HarmonyViewController: CAPBridgeViewController {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--harmony-smoke"), let content = webView?.configuration.userContentController {
             content.add(self, name: "harmonySmoke")
-            let selectedScript = ProcessInfo.processInfo.arguments.contains("--harmony-output-probe") ? Self.outputProbeScript : Self.smokeScript
+            let args = ProcessInfo.processInfo.arguments
+            let selectedScript = args.contains("--harmony-byte-storage-probe") ? Self.byteStorageProbeScript : (args.contains("--harmony-output-probe") ? Self.outputProbeScript : Self.smokeScript)
+            let phase = ["seed", "reopen", "recovery", "recovery-reopen", "recovery-events", "recovery-events-reopen", "off-held", "off-held-events"].first { args.contains("--harmony-byte-phase-" + $0) } ?? "seed"
+            let rawNonce = ProcessInfo.processInfo.environment["HARMONY_QA_NONCE"] ?? ""
+            let nonce = rawNonce.count == 32 && rawNonce.allSatisfy({ $0.isHexDigit }) ? rawNonce : "invalid"
             let script = selectedScript.replacingOccurrences(of: "const failureMode=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-mic-failure") ? "const failureMode=true;" : "const failureMode=false;").replacingOccurrences(of: "const realMic=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-real-mic") ? "const realMic=true;" : "const realMic=false;").replacingOccurrences(of: "const initialProtection=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-extra-protection") ? "const initialProtection=true;" : "const initialProtection=false;")
-            content.addUserScript(WKUserScript(source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            let scopedScript = script.replacingOccurrences(of: "const phase='seed';", with: "const phase='\(phase)';").replacingOccurrences(of: "const qaNonce='draft';", with: "const qaNonce='\(nonce)';")
+            content.addUserScript(WKUserScript(source: scopedScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         }
         #endif
     }
@@ -221,13 +226,13 @@ extension HarmonyViewController {
       const d=window.harmonyDebug,id=d?.activeId;out.recorderMimeType=d?.recorder?.mimeType;out.recorderState=d?.recorder?.state;
       if(!id)throw new Error('No active generated-stimulus debug session');
       const db=await d.db,read=(database,store)=>new Promise((resolve,reject)=>{const r=database.transaction(store).objectStore(store).index('session').getAll(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-      const chunks=await read(db,'chunks');out.localChunkCount=chunks.length;out.localChunkSizes=chunks.map(c=>c.blob.size);out.localChunkTypes=Array.from(new Set(chunks.map(c=>c.blob.type)));
+      const isBytes=v=>v instanceof ArrayBuffer||ArrayBuffer.isView(v),byteSize=v=>isBytes(v)?v.byteLength:v?.size||0;const chunks=await read(db,'chunks');out.localChunkCount=chunks.length;out.localChunkSizes=chunks.map(c=>byteSize(c.data??c.blob));out.localChunkTypes=Array.from(new Set(chunks.map(c=>c.mimeType||c.blob?.type||out.recorderMimeType)));out.localByteBacked=chunks.length>0&&chunks.every(c=>isBytes(c.data)&&!c.blob);
       const transfer=await harmonyDebugUpload.store.db,tasks=(await read(transfer,'tasks')).filter(t=>t.type==='audio');out.queuedAudioTasks=tasks.length;
-      const task=tasks[0];if(!task)throw new Error('No generated-stimulus audio Blob in existing outbox');
-      out.chunkBytes=task.body.size;out.blobType=task.body.type;out.requestMime=task.mime;out.instanceOfBlob=task.body instanceof Blob;
-      stage='blob-arraybuffer';const bytes=await task.body.arrayBuffer();out.arrayBufferBytes=bytes.byteLength;
+      const task=tasks[0];if(!task)throw new Error('No generated-stimulus audio in existing outbox');const payload=t=>t.data??t.body;out.outboxByteBacked=tasks.every(t=>isBytes(payload(t)));
+      out.chunkBytes=byteSize(payload(task));out.blobType=payload(task) instanceof Blob?payload(task).type:'';out.requestMime=task.mime;out.instanceOfBlob=payload(task) instanceof Blob;out.byteBacked=isBytes(payload(task));
+      stage=out.byteBacked?'byte-buffer':'blob-arraybuffer';const bytes=out.byteBacked?(payload(task) instanceof ArrayBuffer?payload(task).slice(0):new Uint8Array(payload(task).buffer,payload(task).byteOffset,payload(task).byteLength).slice().buffer):await payload(task).arrayBuffer();out.arrayBufferBytes=bytes.byteLength;
       stage='sha256';const hash=await crypto.subtle.digest('SHA-256',bytes);out.sha256=Array.from(new Uint8Array(hash),v=>v.toString(16).padStart(2,'0')).join('');
-      stage='request-construction';const request=new Request('https://globalbr.ai/api/ingest/harmony/v1/sessions/probe/chunks/probe',{method:'PUT',mode:'cors',credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer',headers:{'Content-Type':task.mime,'X-Chunk-Kind':'audio','X-Upload-Epoch':'0'},body:task.body});out.requestContentType=request.headers.get('Content-Type');out.requestConstructed=true;out.fetchCalled=false;
+      stage='request-construction';const request=new Request('https://globalbr.ai/api/ingest/harmony/v1/sessions/probe/chunks/probe',{method:'PUT',mode:'cors',credentials:'omit',redirect:'error',cache:'no-store',referrerPolicy:'no-referrer',headers:{'Content-Type':task.mime,'X-Chunk-Kind':'audio','X-Upload-Epoch':'0'},body:new Blob([bytes],{type:task.mime})});out.requestContentType=request.headers.get('Content-Type');out.requestConstructed=true;out.fetchCalled=false;
      }catch(error){out.stage=stage;out.error={name:error.name,message:String(error.message)};}
     };
      const finish=async()=>{if(finished)return;finished=true;try{result.captureLiveAtFinish=realStream?.getAudioTracks().some(t=>t.readyState==='live')===true;result.native=await window.Capacitor.Plugins.HarmonyAudioSession.getRoute();}catch(e){result.errors.push(String(e));}window.harmonySinger?.stop();realStream?.getTracks().forEach(t=>t.stop());oscillators.forEach(o=>{try{o.stop();}catch(_){}});window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
@@ -242,4 +247,107 @@ extension HarmonyViewController {
 }
 #endif
 
+#endif
+
+#if DEBUG
+extension HarmonyViewController {
+    static let byteStorageProbeScript = #"""
+    /* DEBUG-only native QA. Generated bytes, task-owned simulator data, all HTTP intercepted. */
+    (()=>{
+     const phase='seed';const qaNonce='draft';
+     Object.defineProperty(window,'HARMONY_DEBUG_UPLOAD_ENABLED',{configurable:true,get:()=>false,set:()=>{}});
+     const result={test:'native-byte-storage',phase,qaNonce,origin:location.origin,secureContext:isSecureContext,realUploads:0,microphoneCalls:0,enrollmentCalls:0,requests:[],errors:[]};
+     const originalFetch=window.fetch.bind(window),originalRead=Blob.prototype.arrayBuffer;
+     const sleep=ms=>new Promise(r=>setTimeout(r,ms));let transfer,local,context,done=false;
+     const check=(ok,label)=>{if(!ok)throw new Error(label);};
+     const isBytes=v=>v instanceof ArrayBuffer||ArrayBuffer.isView(v);
+     const payload=t=>t.data??t.body;
+     const bytes=v=>v instanceof ArrayBuffer?new Uint8Array(v):new Uint8Array(v.buffer,v.byteOffset,v.byteLength);
+     const digest=async v=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',isBytes(v)?bytes(v):v)),x=>x.toString(16).padStart(2,'0')).join('');
+     const all=async(store,name)=>{const db=await store.db;return await new Promise((r,j)=>{const q=db.transaction(name).objectStore(name).getAll();q.onsuccess=()=>r(q.result);q.onerror=()=>j(q.error);});};
+     const noBlob=v=>!(v instanceof Blob)&&(isBytes(v)||!v||typeof v!=='object'||Object.values(v).every(noBlob));
+     const waitFor=async(fn,label)=>{for(let n=0;n<100;n++){if(fn())return;await sleep(50);}throw new Error(label);};
+     if(navigator.mediaDevices)navigator.mediaDevices.getUserMedia=async()=>{result.microphoneCalls++;throw new Error('QA microphone prohibited');};
+     window.fetch=async(input,options)=>{
+      const req=input instanceof Request?input:new Request(input,options),url=new URL(req.url);
+      if(url.protocol==='capacitor:')return originalFetch(req);
+      if(url.origin!=='https://globalbr.ai')throw new Error('QA external network prohibited');
+      const row={method:req.method,path:url.pathname};result.requests.push(row);
+      if(req.method==='POST'){result.enrollmentCalls++;throw new Error('QA enrollment prohibited');}
+      const id=url.pathname.split('/').at(-1);
+      if(url.pathname.includes('/chunks/')){const body=await req.arrayBuffer();row.bytes=body.byteLength;row.sha256=await digest(body);row.contentType=req.headers.get('Content-Type');return new Response(JSON.stringify({id,bytes:row.bytes,sha256:row.sha256}),{status:200,headers:{'Content-Type':'application/json'}});}
+      if(req.method==='PUT'){const body=await req.json();row.complete=body.complete;row.lostReport=body.complete===undefined&&body.metadata?.uploadDiagnostic?.lostOnDevice===true;row.localPayloadLoss=body.metadata?.localPayloadLoss||null;return new Response(JSON.stringify({id,epoch:0,saved:true}),{status:200,headers:{'Content-Type':'application/json'}});}
+      throw new Error('Unexpected QA request');
+     };
+     window.addEventListener('error',e=>result.errors.push(String(e.message)));
+     const finish=async()=>{if(done)return;done=true;try{if(transfer){clearTimeout(transfer.timer);clearInterval(transfer.maintenance);transfer.channel?.close();(await transfer.store.db).close();}if(local)(await local.db).close();if(context)await context.close();}catch(e){result.errors.push('cleanup: '+String(e.message));}result.pass=result.errors.length===0&&result.microphoneCalls===0&&result.enrollmentCalls===0;window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
+     const setup=async()=>{
+      await waitFor(()=>window.HarmonyNoosTransfer&&window.LocalSessionStore&&window.harmonyDebug,'QA classes not loaded');
+      const C=window.HarmonyNoosTransfer.NoosDebugTransfer;C.prototype.schedule=function(){};
+      transfer=new C(window.harmonyDebug,'https://globalbr.ai/api/ingest/harmony/v1');window.harmonyDebugUpload=transfer;
+      await transfer.ready;await waitFor(()=>transfer.noticed===true,'visible beta notice not painted');
+      await transfer.store.config('device',{deviceId:'00000000000000000000000000000000',token:'qa-only-never-transmitted',epoch:0,limits:{chunkBytes:2097152}});
+      await transfer.syncControl();check(transfer.accepting&&transfer.noticed,'fixture authorization missing');
+      local=new LocalSessionStore('harmony-native-byte-qa');
+     };
+     const record=async()=>{
+      context=new AudioContext();await context.resume();const o=context.createOscillator(),g=context.createGain(),d=context.createMediaStreamDestination();let rec;
+      try{o.frequency.value=220;g.gain.value=.01;o.connect(g).connect(d);o.start();
+       const mime=['audio/webm;codecs=opus','audio/mp4'].find(x=>MediaRecorder.isTypeSupported(x));rec=new MediaRecorder(d.stream,{mimeType:mime,audioBitsPerSecond:96000});let read;
+       rec.ondataavailable=e=>{if(e.data.size&&!read)read=e.data.arrayBuffer().then(data=>({data:new Uint8Array(data),mimeType:rec.mimeType||e.data.type}));};
+       await new Promise((r,j)=>{rec.onstop=r;rec.onerror=e=>j(e.error||new Error('QA recorder failed'));rec.start();setTimeout(()=>{if(rec.state!=='inactive')rec.stop();},500);});
+       check(!!read,'no generated encoder bytes');return await read;
+      }finally{if(rec?.state==='recording')try{rec.stop();}catch(_){}try{o.stop();}catch(_){}o.disconnect();g.disconnect();d.stream.getTracks().forEach(t=>t.stop());d.disconnect();}
+     };
+     const seed=async()=>{
+      const encoded=await record(),id='native-byte-roundtrip',row={id,started:Date.now(),events:[{type:'start',t:1}],bytes:encoded.data.byteLength,mimeType:encoded.mimeType,settings:{speakerMode:true}},control=await transfer.store.get('config','control');
+      await local.write(row,false,{id:id+':0',session:id,index:0,data:encoded.data,mimeType:encoded.mimeType});
+      await transfer.store.append(row,{index:0,data:encoded.data,mimeType:encoded.mimeType},true,{fixture:'generated-byte-roundtrip'},control.generation);
+      const expected={id,bytes:encoded.data.byteLength,sha256:await digest(encoded.data),mimeType:encoded.mimeType};await transfer.store.config('native-byte-qa',expected);
+      const chunks=await all(local,'chunks'),tasks=await all(transfer.store,'tasks');check(chunks.length===1&&isBytes(chunks[0].data)&&noBlob(chunks),'local store retained Blob');check(tasks.some(t=>t.type==='audio')&&tasks.filter(t=>['audio','events'].includes(t.type)).every(t=>isBytes(payload(t))&&isBytes(t.data)&&t.ready===2&&noBlob(t)),'outbox retained Blob');
+      result.expected=expected;result.localByteOnly=true;result.outboxByteOnly=true;result.persistedBeforeProcessStop=true;
+     };
+     const reopen=async()=>{
+      const expected=await transfer.store.get('config','native-byte-qa');check(expected?.id,'cold fixture missing');const rows=await local.rows(),row=rows.find(r=>r.id===expected.id);check(row,'local row missing after relaunch');
+      const rebuilt=await local.audio(row),data=await rebuilt.arrayBuffer();check(rebuilt.type===expected.mimeType,'local reconstructed MIME changed');check(data.byteLength===expected.bytes&&await digest(data)===expected.sha256,'local reconstructed bytes changed after relaunch');
+      const tasks=await all(transfer.store,'tasks'),audio=tasks.find(t=>t.type==='audio'&&t.session===expected.id);check(audio&&isBytes(payload(audio))&&noBlob(audio),'outbox not bytes after relaunch');check(sizeOf(payload(audio))===expected.bytes&&await digest(payload(audio))===expected.sha256,'outbox bytes changed after relaunch');
+      const request=new Request('https://example.invalid/no-fetch',{method:'PUT',headers:{'Content-Type':audio.mime},body:new Blob([bytes(payload(audio))],{type:audio.mime})});check(request.headers.get('Content-Type')===expected.mimeType,'reconstructed request MIME changed');
+      result.expected=expected;result.relaunchRoundtrip=true;result.requestContentType=request.headers.get('Content-Type');result.noBlobPersisted=tasks.filter(t=>['audio','events'].includes(t.type)).every(noBlob);check(result.noBlobPersisted,'legacy Blob in fresh byte fixture');
+     };
+     const sizeOf=v=>isBytes(v)?v.byteLength:v.size;
+     const recovery=async()=>{
+      const lossKind=phase==='recovery-events'?'events':'audio';result.lossKind=lossKind;const c=await transfer.store.get('config','control'),badId='native-legacy-loss-'+lossKind,goodId='native-after-loss-'+lossKind,data=new TextEncoder().encode('generated byte fixture only');
+      for(const id of [badId,goodId]){const row={id,started:Date.now(),events:[{type:'start',t:1}],bytes:data.byteLength,mimeType:'audio/webm;codecs=opus'};await transfer.store.append(row,{index:0,data,mimeType:row.mimeType},true,{fixture:id},c.generation);}
+      const tasks=await all(transfer.store,'tasks'),bad=tasks.find(t=>t.session===badId&&t.type===lossKind);check(bad,'legacy fixture task missing');const healthyEvent=tasks.find(t=>t.session===goodId&&t.type==='events');check(healthyEvent&&isBytes(payload(healthyEvent)),'healthy event fixture missing');const eventExpected={bytes:payload(healthyEvent).byteLength,sha256:await digest(payload(healthyEvent)),remote:healthyEvent.remote,mime:healthyEvent.mime};
+      await transfer.store.change(['tasks'],tx=>tx.objectStore('tasks').put({...bad,data:undefined,body:new Blob([bytes(payload(bad))],{type:bad.mime}),ready:1}));
+      const doomed=new WeakSet(),authorize=transfer.store.authorize.bind(transfer.store);transfer.store.authorize=async(...args)=>{const claim=await authorize(...args);if(claim?.task?.id===bad.id&&claim.task.body instanceof Blob)doomed.add(claim.task.body);return claim;};
+      Blob.prototype.arrayBuffer=function(){if(doomed.has(this)){result.injectedLegacyReadAttempts=(result.injectedLegacyReadAttempts||0)+1;return Promise.reject(new DOMException('Synthetic absent backing file','NotFoundError'));}return originalRead.call(this);};
+      try{for(let n=0;n<6;n++){await transfer.drain();if(!await transfer.store.next())break;}const lost=await transfer.store.get('tasks',bad.id);check(lost?.lostOnDevice===true&&lost.failed==='lost-on-device'&&lost.ready===0&&payload(lost)===null&&lost.lostBytes===bad.bytes,'legacy loss not durable terminal');
+       const before=result.requests.filter(r=>r.lostReport).length;check(before===1,'lost diagnostic not reported exactly once');const expectedSha=await digest(data);check(result.requests.some(r=>r.path.includes('/'+goodId+'/chunks/')&&r.bytes===data.byteLength&&r.sha256===expectedSha&&r.contentType==='audio/webm;codecs=opus'),'healthy later session bytes/hash/MIME incorrect or blocked');check(result.requests.some(r=>r.path.includes('/'+goodId+'/chunks/')&&r.path.endsWith('/'+eventExpected.remote)&&r.bytes===eventExpected.bytes&&r.sha256===eventExpected.sha256&&r.contentType===eventExpected.mime),'healthy successor event bytes/hash/MIME incorrect or blocked');result.healthyEventsAfterLoss=true;check(result.injectedLegacyReadAttempts===1,'legacy payload read repeated');
+       await transfer.store.retryFailed();for(let n=0;n<3;n++)await transfer.drain();const again=await transfer.store.get('tasks',bad.id);check(again?.lostOnDevice&&again.ready===0,'Retry revived lost bytes');check(result.requests.filter(r=>r.lostReport).length===before,'Retry repeated loss report');
+       await transfer.store.config('native-loss-qa',{session:badId,taskId:bad.id,kind:lossKind});result.lossTerminalOnce=true;result.lossReports=before;result.healthyAfterLoss=true;result.retryDoesNotRevive=true;result.noReadyTasks=(await transfer.store.next())===null;check(result.noReadyTasks,'unexpected ready FIFO task remains');
+      }finally{Blob.prototype.arrayBuffer=originalRead;}
+     };
+     const recoveryReopen=async()=>{
+      const expected=await transfer.store.get('config','native-loss-qa');result.lossKind=expected?.kind;check(expected?.taskId,'cold loss fixture missing');
+      const lost=await transfer.store.get('tasks',expected.taskId);check(lost?.lostOnDevice&&lost.ready===0&&payload(lost)===null,'cold relaunch revived lost task');
+      const session=await transfer.store.get('sessions',expected.session);check(session?.localPayloadLoss?.reason==='lost-on-device','cold loss metadata absent');
+      await transfer.store.retryFailed();await transfer.drain();check((await transfer.store.get('tasks',expected.taskId))?.ready===0,'cold Retry revived loss');check(result.requests.length===0,'cold loss retry re-reported or uploaded');
+      result.lossSurvivesRelaunch=true;result.noRepeatedReport=true;
+     };
+     const offHeld=async()=>{
+      const lossKind=phase==='off-held-events'?'events':'audio';result.lossKind=lossKind;const c=await transfer.store.get('config','control'),id='native-held-off-'+lossKind,data=new TextEncoder().encode('generated held fixture');
+      await transfer.store.append({id,started:Date.now(),events:lossKind==='events'?[{type:'start',t:1}]:[],bytes:data.byteLength,mimeType:'audio/webm;codecs=opus'},{index:0,data,mimeType:'audio/webm;codecs=opus'},true,{fixture:'held-off'},c.generation);
+      const task=(await all(transfer.store,'tasks')).find(t=>t.session===id&&t.type===lossKind);check(task,'held fixture task missing');await transfer.store.change(['tasks'],tx=>tx.objectStore('tasks').put({...task,data:undefined,body:new Blob([bytes(payload(task))],{type:task.mime}),ready:1}));
+      const doomed=new WeakSet(),authorize=transfer.store.authorize.bind(transfer.store);let rejectRead;
+      transfer.store.authorize=async(...args)=>{const q=await authorize(...args);if(q?.task?.id===task.id&&q.task.body instanceof Blob)doomed.add(q.task.body);return q;};
+      Blob.prototype.arrayBuffer=function(){if(doomed.has(this))return new Promise((resolve,reject)=>{rejectRead=reject;});return originalRead.call(this);};
+      try{const draining=transfer.drain();await waitFor(()=>!!rejectRead,'held legacy read not entered');window.harmonyDebug.enabled=false;await transfer.setEnabled(false);const count=result.requests.length;rejectRead(new DOMException('Synthetic lost file after Off','NotFoundError'));await draining;await sleep(50);check(result.requests.length===count,'Off allowed stale report/upload');check(!await transfer.store.get('tasks',task.id),'Off resurrected pending task');check(!result.requests.some(r=>r.lostReport),'Off emitted stale loss diagnostic');result.offDuringReadFenced=true;
+      }finally{Blob.prototype.arrayBuffer=originalRead;}
+     };
+     window.addEventListener('DOMContentLoaded',()=>setTimeout(async()=>{try{await setup();if(phase==='seed')await seed();else if(phase==='reopen')await reopen();else if(['recovery','recovery-events'].includes(phase))await recovery();else if(['recovery-reopen','recovery-events-reopen'].includes(phase))await recoveryReopen();else if(['off-held','off-held-events'].includes(phase))await offHeld();else throw new Error('Unknown QA phase');}catch(e){result.errors.push(String(e.stack||e));}await finish();},500));
+     setTimeout(()=>{if(!done){result.errors.push('native byte QA deadline');finish();}},25000);
+    })();
+    """#
+}
 #endif
