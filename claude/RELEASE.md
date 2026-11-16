@@ -1,3 +1,13 @@
+## 2026-11-16-task-diagnostics-1
+
+Failure details now identify the queued task kind (including begin metadata), task and chunk bytes, actual Content-Type, persisted tracked attempt count, when tracking began, and task age at the reported failure. Legacy tasks do not invent an earlier retry count. These fields join the existing sanitized error and preparation/fetch stage.
+
+Audio/events reports still use only their already acknowledged session metadata path. A begin that has never been acknowledged can only report locally; the diagnostic never creates another session or enrols again. Reports remain bounded and deduplicated snapshots, not continuously refreshed retry totals. Queue ordering, retry/backoff, credentials, chunk bytes, consent/Off, deletion and epoch protections remain unchanged.
+
+Validation: four independently reviewed sandboxed mocked-browser groups cover audio/events/begin failures, durable counters and age across reload, legacy uncertainty, authorization renewals, blocked/leased/stale attempts, caps, Off and deletion. Eight existing stage groups and five existing contract/notice/edge/recovery/timeout suites also pass. No real enrollment, microphone, encoder, or public upload was used.
+
+A separate, unimplemented parking proposal considers whether repeated deterministic local preparation failures should park one session while later sessions continue. It requires its own reviewed release, including incomplete-session and deletion tests. This diagnostic release neither enables parking nor claims the physical iPhone failure is fixed.
+
 ## 2026-11-16-browser-runtime-1
 
 Audio check now identifies the reported browser family/version and engine, distinguishing Chrome iOS (CriOS) from Safari and the native app. The engine label explicitly comes from the User-Agent; it is not an engine-build measurement. Actual AudioSession access and session selection remain feature-detected.
