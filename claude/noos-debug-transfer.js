@@ -52,6 +52,11 @@
     if(fresh)add({priority:1,type:'begin',body:{metadata,complete:false}});
     const events=row.events||[];for(let start=s.events;start<events.length;start+=32){const end=Math.min(events.length,start+32),batch=clean(events.slice(start,end).filter(e=>e.t>=s.eventStart));if(batch.length){const body=new Blob([JSON.stringify(batch)],{type:'application/json'});if(body.size>CAP)throw Object.assign(new Error('Diagnostic event exceeds upload cap'),{code:'event_limit'});add({priority:2,type:'events',remote:'events-'+String(start).padStart(6,'0')+'-'+String(end).padStart(6,'0'),body,mime:'application/json'});}s.events=end;}
     if(chunk?.blob&&!s.audio[chunk.index]){for(let part=0;part<Math.ceil(chunk.blob.size/CAP);part++){const body=chunk.blob.slice(part*CAP,(part+1)*CAP);if(s.audioBytes+body.size>AUDIO_CAP){s.audioLimited=true;break;}s.audioBytes+=body.size;add({priority:2,type:'audio',remote:'audio-'+String(chunk.index).padStart(6,'0')+'-'+String(part).padStart(4,'0'),body,mime:row.mimeType||chunk.blob.type||'application/octet-stream'});}s.audio[chunk.index]=true;}
+    // Latest readings can use the already accepted JSON metadata path even when a binary chunk is stuck.
+    // One immutable pending heartbeat per active eligible session, including events after the audio cap.
+    if(!fresh&&s.remoteBegun&&canCreate&&!s.heartbeatPending&&Date.now()-(s.heartbeatAt||s.created)>=5000){
+     add({priority:1,type:'heartbeat',body:{metadata:{...metadata,...(s.metadata?.uploadDiagnostic?{uploadDiagnostic:s.metadata.uploadDiagnostic}:{})}}});s.heartbeatPending=true;s.heartbeatAt=Date.now();
+    }
     if(row.audioEnded&&!s.ended){add({priority:3,type:'end',body:{metadata:{...metadata,...(s.metadata?.uploadDiagnostic?{uploadDiagnostic:s.metadata.uploadDiagnostic}:{}),audioLimited:!!s.audioLimited,transferLimited:!!s.transferLimited},complete:true}});s.ended=true;}
     const bytes=pending.reduce((n,t)=>n+t.bytes,0);if(u.bytes+bytes>QUEUE_CAP||(fresh&&u.count>=SESSION_CAP))throw quota();
     pending.forEach(t=>ts.add(t));ss.put(s);u.bytes+=bytes;if(fresh)u.count++;tx.objectStore('config').put(u,'usage');done({limited:!!s.transferLimited});
@@ -65,7 +70,7 @@
      const t=q.result;if(!t||t.failed||!['audio','events'].includes(t.type)||t.generation!==c.generation||t.epoch!==c.epoch){done(false);return;}
      const metadata={...s.metadata,uploadDiagnostic:detail},metadataBytes=size(metadata),body={metadata},bytes=size(body),updates=[];let extra=0,tooLarge=metadataBytes>256*1024||bytes>CAP;
      const ends=ts.index('session').openCursor(IDBKeyRange.only(t.session));ends.onsuccess=g(()=>{
-      const cursor=ends.result;if(cursor){const end=cursor.value;if(end.type==='end'&&!end.failed&&end.generation===c.generation&&(end.epoch===null||end.epoch===c.epoch)){
+      const cursor=ends.result;if(cursor){const end=cursor.value;if(['end','heartbeat'].includes(end.type)&&!end.failed&&end.generation===c.generation&&(end.epoch===null||end.epoch===c.epoch)){
        const nextBody={...end.body,metadata:{...end.body.metadata,uploadDiagnostic:detail}},nextBytes=size(nextBody);if(size(nextBody.metadata)>256*1024||nextBytes>CAP)tooLarge=true;
        extra+=nextBytes-(end.bytes||0);updates.push({...end,body:nextBody,bytes:nextBytes});
       }cursor.continue();return;}
@@ -99,16 +104,16 @@
   release(owner){return this.mutate((tx,c,u,done)=>{if(c.lease?.owner===owner)delete c.lease;done();});}
   receipt(task,reply){return this.mutate((tx,c,u,done,g)=>{const ts=tx.objectStore('tasks'),r=ts.get(task.id);r.onsuccess=g(()=>{
    if(!r.result){done(false);return;}
-   if(['begin','end'].includes(task.type)){
+   if(['begin','end','heartbeat'].includes(task.type)){
     const ss=tx.objectStore('sessions'),s=ss.get(task.session);s.onsuccess=g(()=>{
      if(!s.result||s.result.deleted||s.result.generation!==task.generation||c.generation!==task.generation)return;
      const metadata={...task.body.metadata,...(s.result.metadata?.uploadDiagnostic?{uploadDiagnostic:s.result.metadata.uploadDiagnostic}:{})},metadataBytes=size(metadata);
      u.bytes=Math.max(0,u.bytes-(s.result.metadataBytes||0)+metadataBytes);
-     ss.put({...s.result,remoteBegun:true,begunEpoch:task.epoch,metadata,metadataBytes});tx.objectStore('config').put(u,'usage');
+     ss.put({...s.result,remoteBegun:true,begunEpoch:task.epoch,metadata,metadataBytes,...(task.type==='heartbeat'?{heartbeatPending:false}:{})});tx.objectStore('config').put(u,'usage');
     });
    }
    if(task.type==='deleteAll'){if(c.deletePending!==task.operation){done(false);return;}c.epoch=reply.epoch;c.deletePending=null;if(c.policyResumeOn)c.enabled=true;delete c.policyResumeOn;const d=tx.objectStore('config').get('device');d.onsuccess=g(()=>{if(d.result)tx.objectStore('config').put({...d.result,epoch:reply.epoch},'device');});}
-   u.bytes=Math.max(0,u.bytes-(r.result.bytes||0));ts.delete(task.id);c.block=0;c.retry=1000;tx.objectStore('config').put(u,'usage');done(true);
+   u.bytes=Math.max(0,u.bytes-(r.result.bytes||0));ts.delete(task.id);if(task.type!=='heartbeat'){c.block=0;c.retry=1000;}tx.objectStore('config').put(u,'usage');done(true);
   });});}
   defer(error,generation){return this.mutate((tx,c,u,done)=>{if(generation!==undefined&&c.generation!==generation){done(c.block||0);return;}c.retry=Math.max(error.retryAfter||0,Math.min(60000,(c.retry||1000)*2));c.block=Date.now()+c.retry;done(c.block);});}
   permanent(task,message){return this.mutate((tx,c,u,done,g)=>{if(task.session&&!task.type.startsWith('delete')){const ss=tx.objectStore('sessions'),s=ss.get(task.session);s.onsuccess=g(()=>{if(s.result)ss.put({...s.result,eligible:false,failed:message});});}const ts=tx.objectStore('tasks'),r=task.session?ts.index('session').openCursor(IDBKeyRange.only(task.session)):ts.openCursor(IDBKeyRange.only(task.id));r.onsuccess=g(()=>{const x=r.result;if(x){x.update({...x.value,failed:message,ready:0});x.continue();}else done();});});}
@@ -145,7 +150,7 @@
    let subtleDigest=false;try{subtleDigest=typeof crypto.subtle?.digest==='function';}catch(_){}
    const now=Date.now(),number=(value,max=Number.MAX_SAFE_INTEGER)=>Number.isSafeInteger(value)&&value>=0&&value<=max?value:null;
    // Counts start when this instrumentation first attempts a task; never invent legacy retry history.
-   return {stage:error.uploadStage,errorName:names.includes(error.name)?error.name:'Error',message:scrub(error.message),chunkBytes:number(task.body?.size),taskBytes:number(task.bytes),kind:['audio','events','begin','end','diagnostic','delete','deleteAll'].includes(task.type)?task.type:null,attemptCount:number(task.attemptCount,1000000),attemptTrackingStartedAt:number(task.attemptTrackingStarted,now)!==null?new Date(task.attemptTrackingStarted).toISOString():null,taskAgeMs:number(task.created)!==null?Math.max(0,now-task.created):null,blobType:scrub(task.body?.type),contentType:scrub(task.body instanceof Blob?task.mime||task.body.type||'application/octet-stream':'application/json'),secureContext:!!window.isSecureContext,blobArrayBuffer:typeof Blob.prototype.arrayBuffer==='function',subtleDigest,at:new Date(now).toISOString()};
+   return {stage:error.uploadStage,errorName:names.includes(error.name)?error.name:'Error',message:scrub(error.message),chunkBytes:number(task.body?.size),taskBytes:number(task.bytes),kind:['audio','events','begin','end','diagnostic','heartbeat','delete','deleteAll'].includes(task.type)?task.type:null,attemptCount:number(task.attemptCount,1000000),attemptTrackingStartedAt:number(task.attemptTrackingStarted,now)!==null?new Date(task.attemptTrackingStarted).toISOString():null,taskAgeMs:number(task.created)!==null?Math.max(0,now-task.created):null,blobType:scrub(task.body?.type),contentType:scrub(task.body instanceof Blob?task.mime||task.body.type||'application/octet-stream':'application/json'),secureContext:!!window.isSecureContext,blobArrayBuffer:typeof Blob.prototype.arrayBuffer==='function',subtleDigest,at:new Date(now).toISOString()};
   }
   async queueFailure(task,error){
    if(!task||!['audio','events'].includes(task.type)||error.name==='AbortError'||error.status||!this.accepting||!this.debug.enabled||!this.noticed)return;
@@ -190,7 +195,7 @@
   async drain(){if(this.busy||this.storageFailed)return;this.busy=true;let task,removalMessage,taskOperation;try{await this.ready;await this.syncControl();while((task=await this.store.next())){
     let claim=await this.store.authorize(task.id,this.owner,false);if(!claim){this.schedule(1000);break;}if(claim.blocked){this.block=claim.blocked;this.schedule();break;}task=claim.task;const deleting=task.type.startsWith('delete'),operation=this.operation;taskOperation=operation;
     if(!deleting&&(!this.accepting||!this.debug.enabled||!this.noticed))break;
-    if(!this.device?.token){if(task.type==='diagnostic'){await this.store.remove(task.id);continue;}if(deleting){await this.store.receipt(task,{epoch:claim.control.epoch});this.status('Removed local copies. No server device was enrolled.');continue;}await this.enroll();}
+    if(!this.device?.token){if(['diagnostic','heartbeat'].includes(task.type)){await this.store.remove(task.id);continue;}if(deleting){await this.store.receipt(task,{epoch:claim.control.epoch});this.status('Removed local copies. No server device was enrolled.');continue;}await this.enroll();}
     // Enrollment, credential persistence and tab changes may revoke the original task.
     claim=await this.store.authorize(task.id,this.owner,true,true);if(!claim||claim.blocked||(!deleting&&(operation!==this.operation||!this.accepting||!this.debug.enabled||!this.noticed)))continue;
     task=claim.task;this.device=await this.store.get('config','device');let digest;
@@ -205,8 +210,8 @@
     else if(task.type==='delete'){reply=await this.request('/sessions/'+task.session,'DELETE',undefined,headers);this.checkDeletion(reply);}
     else if(task.type==='audio'||task.type==='events'){if(task.body.size>(this.device.limits.chunkBytes||this.device.limits.request_bytes||CAP))throw Object.assign(new Error('Negotiated request cap exceeded'),{status:413});reply=await this.request('/sessions/'+task.session+'/chunks/'+task.remote,'PUT',task.body,{...headers,'Content-Type':task.mime,'X-Chunk-Kind':task.type});if(reply.id!==task.remote||reply.bytes!==task.body.size||reply.sha256!==digest)throw Object.assign(new Error('Chunk acknowledgement mismatch'),{status:409});}
     else{reply=await this.request('/sessions/'+task.session,'PUT',task.body,headers);if(reply.id!==task.session||reply.epoch!==task.epoch||reply.saved!==true)throw Object.assign(new Error('Session acknowledgement mismatch'),{status:409});}
-    if(task.type!=='diagnostic'){this.limitError=false;if(!this.permanentError&&!this.captureError)this.failureReason=null;}const acknowledged=await this.store.receipt(task,reply);if(deleting&&acknowledged){removalMessage=this.removalSummary(task,reply);this.status(removalMessage);}this.block=0;
-   }if(this.accepting){this.state=this.captureError||this.permanentError?'error':navigator.onLine?'idle':'offline';this.status(this.captureError||this.permanentError||removalMessage|| (navigator.onLine?'Beta diagnostics sent privately to Ideaflow.':'Recording · will send when online'));}
+    if(!['diagnostic','heartbeat'].includes(task.type)){this.limitError=false;if(!this.permanentError&&!this.captureError)this.failureReason=null;}const acknowledged=await this.store.receipt(task,reply);if(deleting&&acknowledged){removalMessage=this.removalSummary(task,reply);this.status(removalMessage);}this.block=0;
+   }if(this.accepting){this.state=this.captureError||this.permanentError||this.failureReason?'error':navigator.onLine?'idle':'offline';this.status(this.captureError||this.permanentError||this.failureReason||removalMessage|| (navigator.onLine?'Beta diagnostics sent privately to Ideaflow.':'Recording · will send when online'));}
   }catch(e){
    const deleting=task?.type.startsWith('delete'),stale=()=>!!task&&!deleting&&(taskOperation!==this.operation||!this.accepting||!this.debug.enabled||!this.noticed);
    if(stale())return;
