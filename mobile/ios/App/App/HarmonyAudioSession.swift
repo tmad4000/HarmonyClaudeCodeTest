@@ -36,7 +36,7 @@ class HarmonyViewController: CAPBridgeViewController {
             content.add(self, name: "harmonySmoke")
             let args = ProcessInfo.processInfo.arguments
             let selectedScript = args.contains("--harmony-byte-storage-probe") ? Self.byteStorageProbeScript : (args.contains("--harmony-output-probe") ? Self.outputProbeScript : Self.smokeScript)
-            let phase = ["seed", "reopen", "recovery", "recovery-reopen", "recovery-events", "recovery-events-reopen", "off-held", "off-held-events"].first { args.contains("--harmony-byte-phase-" + $0) } ?? "seed"
+            let phase = ["seed", "reopen", "recovery", "recovery-reopen", "recovery-events", "recovery-events-reopen", "off-held", "off-held-events", "migration-seed", "migration-reopen", "migration-stable"].first { args.contains("--harmony-byte-phase-" + $0) } ?? "seed"
             let rawNonce = ProcessInfo.processInfo.environment["HARMONY_QA_NONCE"] ?? ""
             let nonce = rawNonce.count == 32 && rawNonce.allSatisfy({ $0.isHexDigit }) ? rawNonce : "invalid"
             let script = selectedScript.replacingOccurrences(of: "const failureMode=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-mic-failure") ? "const failureMode=true;" : "const failureMode=false;").replacingOccurrences(of: "const realMic=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-real-mic") ? "const realMic=true;" : "const realMic=false;").replacingOccurrences(of: "const initialProtection=false;", with: ProcessInfo.processInfo.arguments.contains("--harmony-extra-protection") ? "const initialProtection=true;" : "const initialProtection=false;")
@@ -318,6 +318,26 @@ extension HarmonyViewController {
       result.expected=expected;result.relaunchRoundtrip=true;result.requestContentType=request.headers.get('Content-Type');result.noBlobPersisted=tasks.filter(t=>['audio','events'].includes(t.type)).every(noBlob);check(result.noBlobPersisted,'legacy Blob in fresh byte fixture');
      };
      const sizeOf=v=>isBytes(v)?v.byteLength:v.size;
+     const migration=async()=>{
+      const id='native-mixed-migration',c=await transfer.store.get('config','control');
+      const describe=async tasks=>Promise.all(tasks.map(async t=>({id:t.id,type:t.type,remote:t.remote??null,priority:t.priority,epoch:t.epoch,bytes:t.bytes,mime:t.mime??null,sha256:isBytes(payload(t))?await digest(payload(t)):JSON.stringify(payload(t))})));
+      if(phase==='migration-seed'){
+       const data=new Uint8Array([1,2,3,4]),row={id,started:Date.now(),events:[{type:'start',t:1}],bytes:4,mimeType:'audio/mp4'};
+       await transfer.store.append(row,{index:0,data,mimeType:row.mimeType},true,{fixture:'mixed-migration'},c.generation);
+       await transfer.store.append({...row,bytes:8},{index:1,data:new Uint8Array([5,6,7,8]),mimeType:row.mimeType},true,{fixture:'mixed-migration'},c.generation);
+       const tasks=(await all(transfer.store,'tasks')).filter(t=>t.session===id);check(tasks.length>=4,'mixed fixture incomplete');
+       await transfer.store.change(['tasks','sessions','config'],tx=>{const legacy={...tasks[0],generation:c.generation,ready:1};delete legacy.formatVersion;tx.objectStore('tasks').put(legacy);const q=tx.objectStore('sessions').get(id);q.onsuccess=()=>{const v={...q.result,generation:c.generation};delete v.formatVersion;tx.objectStore('sessions').put(v);};tx.objectStore('config').put({...c,block:Date.now()+600000},'control');});
+       const expected={tasks:await describe((await all(transfer.store,'tasks')).filter(t=>t.session===id)),generation:c.generation,epoch:c.epoch,block:(await transfer.store.get('config','control')).block};await transfer.store.config('native-migration-qa',expected);result.mixedLegacyPersisted=true;
+      }else{
+       const expected=await transfer.store.get('config','native-migration-qa'),tasks=(await all(transfer.store,'tasks')).filter(t=>t.session===id),actual=await describe(tasks);check(expected&&tasks.length===expected.tasks.length,'migration row count changed');
+       check(tasks.every(t=>t.formatVersion===2&&t.ready===2&&t.generation==='v2:'+expected.generation),'migration generation/ready changed');
+       check(JSON.stringify(actual.map(({id,...v})=>v))===JSON.stringify(expected.tasks.map(({id,...v})=>v)),'migration order/wire/bytes/MIME/epoch changed');
+       const control=await transfer.store.get('config','control');check(control.generation===expected.generation&&control.epoch===expected.epoch&&control.block===expected.block,'migration control/backoff changed');
+       if(phase==='migration-reopen'){check(actual.every(t=>!expected.tasks.some(old=>old.id===t.id)),'held old receipt local IDs reused');await transfer.store.config('native-migration-stable',actual.map(t=>t.id));result.coldMigrationVerified=true;}
+       else{check(JSON.stringify(actual.map(t=>t.id))===JSON.stringify(await transfer.store.get('config','native-migration-stable')),'protected IDs rekeyed again');result.migrationStableAfterRelaunch=true;}
+       check(result.requests.length===0,'migration sent network request');
+      }
+     };
      const recovery=async()=>{
       const lossKind=phase==='recovery-events'?'events':'audio';result.lossKind=lossKind;const c=await transfer.store.get('config','control'),badId='native-legacy-loss-'+lossKind,goodId='native-after-loss-'+lossKind,data=new TextEncoder().encode('generated byte fixture only');
       for(const id of [badId,goodId]){const row={id,started:Date.now(),events:[{type:'start',t:1}],bytes:data.byteLength,mimeType:'audio/webm;codecs=opus'};await transfer.store.append(row,{index:0,data,mimeType:row.mimeType},true,{fixture:id},c.generation);}
@@ -325,7 +345,7 @@ extension HarmonyViewController {
       await transfer.store.change(['tasks'],tx=>tx.objectStore('tasks').put({...bad,data:undefined,body:new Blob([bytes(payload(bad))],{type:bad.mime}),ready:1}));
       const doomed=new WeakSet(),authorize=transfer.store.authorize.bind(transfer.store);transfer.store.authorize=async(...args)=>{const claim=await authorize(...args);if(claim?.task?.id===bad.id&&claim.task.body instanceof Blob)doomed.add(claim.task.body);return claim;};
       Blob.prototype.arrayBuffer=function(){if(doomed.has(this)){result.injectedLegacyReadAttempts=(result.injectedLegacyReadAttempts||0)+1;return Promise.reject(new DOMException('Synthetic absent backing file','NotFoundError'));}return originalRead.call(this);};
-      try{for(let n=0;n<6;n++){await transfer.drain();if(!await transfer.store.next())break;}const lost=await transfer.store.get('tasks',bad.id);check(!lost,'lost task not removed');const lossSession=await transfer.store.get('sessions',badId);check(lossSession?.localPayloadLoss?.reason==='lost-on-device'&&lossSession.localPayloadLoss.chunks===1,'session loss ledger missing');
+      try{for(let n=0;n<6;n++){await transfer.drain();if(!await transfer.store.next())break;}const lost=await transfer.store.get('tasks',bad.id);check(!lost,'lost task not removed');const lossSession=await transfer.store.get('sessions',badId);check(lossSession?.localPayloadLoss?.reason==='lost-on-device'&&lossSession.localPayloadLoss.chunks===1&&lossSession.localPayloadLoss.bytes===bad.bytes&&lossSession.localPayloadLoss.lastKind===lossKind&&lossSession.localPayloadLoss.lastChunk===bad.remote,'session loss ledger missing');
        const before=result.requests.filter(r=>r.lostReport).length;check(before===1,'lost diagnostic not reported exactly once');const expectedSha=await digest(data);check(result.requests.some(r=>r.path.includes('/'+goodId+'/chunks/')&&r.bytes===data.byteLength&&r.sha256===expectedSha&&r.contentType==='audio/webm;codecs=opus'),'healthy later session bytes/hash/MIME incorrect or blocked');check(result.requests.some(r=>r.path.includes('/'+goodId+'/chunks/')&&r.path.endsWith('/'+eventExpected.remote)&&r.bytes===eventExpected.bytes&&r.sha256===eventExpected.sha256&&r.contentType===eventExpected.mime),'healthy successor event bytes/hash/MIME incorrect or blocked');result.healthyEventsAfterLoss=true;check(result.injectedLegacyReadAttempts===1,'legacy payload read repeated');
        await transfer.store.retryFailed();for(let n=0;n<3;n++)await transfer.drain();const again=await transfer.store.get('tasks',bad.id);check(!again,'Retry revived lost bytes');check(result.requests.filter(r=>r.lostReport).length===before,'Retry repeated loss report');
        await transfer.store.config('native-loss-qa',{session:badId,taskId:bad.id,kind:lossKind});result.lossTerminalOnce=true;result.lossReports=before;result.healthyAfterLoss=true;result.retryDoesNotRevive=true;result.noReadyTasks=(await transfer.store.next())===null;check(result.noReadyTasks,'unexpected ready FIFO task remains');
@@ -348,7 +368,7 @@ extension HarmonyViewController {
       try{const draining=transfer.drain();await waitFor(()=>!!rejectRead,'held legacy read not entered');window.harmonyDebug.enabled=false;await transfer.setEnabled(false);const count=result.requests.length;rejectRead(new DOMException('Synthetic lost file after Off','NotFoundError'));await draining;await sleep(50);check(result.requests.length===count,'Off allowed stale report/upload');check(!await transfer.store.get('tasks',task.id),'Off resurrected pending task');check(!result.requests.some(r=>r.lostReport),'Off emitted stale loss diagnostic');result.offDuringReadFenced=true;
       }finally{Blob.prototype.arrayBuffer=originalRead;}
      };
-     window.addEventListener('DOMContentLoaded',()=>setTimeout(async()=>{try{await setup();if(phase==='seed')await seed();else if(phase==='reopen')await reopen();else if(['recovery','recovery-events'].includes(phase))await recovery();else if(['recovery-reopen','recovery-events-reopen'].includes(phase))await recoveryReopen();else if(['off-held','off-held-events'].includes(phase))await offHeld();else throw new Error('Unknown QA phase');}catch(e){result.errors.push(String(e.stack||e));}await finish();},500));
+     window.addEventListener('DOMContentLoaded',()=>setTimeout(async()=>{try{await setup();if(phase.startsWith('migration-'))await migration();else if(phase==='seed')await seed();else if(phase==='reopen')await reopen();else if(['recovery','recovery-events'].includes(phase))await recovery();else if(['recovery-reopen','recovery-events-reopen'].includes(phase))await recoveryReopen();else if(['off-held','off-held-events'].includes(phase))await offHeld();else throw new Error('Unknown QA phase');}catch(e){result.errors.push(String(e.stack||e));}await finish();},500));
      setTimeout(()=>{if(!done){result.errors.push('native byte QA deadline');finish();}},25000);
     })();
     """#
