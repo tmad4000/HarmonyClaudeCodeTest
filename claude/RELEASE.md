@@ -1,3 +1,11 @@
+## 2026-11-16-capture-readings-2
+
+If audio recording cannot be constructed, started or continued, technical readings remain in the same song session and the page says audio is unavailable. Audio check reports recorder support, selected MIME, state and a fixed error class/stage. A constructor failure creates one readings-only song session; later failure preserves the existing ID and previously captured bytes, with no second encoder.
+
+This integrates the reviewed fallback onto byte-recordings-1. Immediate live Blob reads, byte-backed local/outbox persistence, ordinary Stop final data, Off cancellation, legacy NotFound recovery and older-tab integrity guards remain intact. Failure finalization waits for already captured bytes before writing audio-ended metadata. The regular heartbeat can still send readings while binary uploads fail.
+
+Independent review covers pending-byte errors, Stop, rapid Off→On, new-session ownership, storage errors and no codec/gain/auth changes; generated sandboxed full-app encoder-fault tests cover the notice, one mock enrollment/session, continued readings, Off and confirmed removal. No actual user recording, public test upload or physical iPhone fix is claimed. Native build 5 remains frozen on the earlier e33e84a byte-storage patch; this web follow-up does not replace that handoff.
+
 ## 2026-11-16-byte-recordings-1
 
 Debug audio is materialized immediately from each live MediaRecorder callback and persisted as owned bytes with its MIME type, rather than retaining WebKit file-backed Blobs in IndexedDB. JSON event chunks are byte-backed too. Ordered writes and Stop finalization preserve the last chunk; Turning Recording off invalidates pending reads even if it is turned back on before they finish. Upload creates a temporary Blob from those bytes and verifies the same exact size and SHA-256 acknowledgement. Local exports support both new byte chunks and older valid Blob chunks. No codec or audio-engine change.
