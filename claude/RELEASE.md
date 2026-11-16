@@ -1,3 +1,13 @@
+## 2026-11-16-upload-stages-1
+
+Upload failures now identify whether the browser failed while reading a chunk, calculating its SHA-256 checksum, constructing a request, or fetching the server response. A failure report includes the error class, a scrubbed and shortened message, chunk size/type and browser API availability. It contains no audio, request headers or credential values. The generic failure text no longer treats every local exception as a server outage.
+
+A small JSON metadata update carries a bounded report through the already acknowledged session path, even if audio/event chunks cannot be prepared. It uses the same device credential, consent/Off, epoch, removal and queue protections; it does not enrol a device or create a session. Reports cannot recursively report themselves. Older queued sessions without a retained acknowledgement snapshot are not reconstructed. Complete/pinned flags are preserved. Retained metadata and reports count toward the existing queue cap, and oversized chunks are rejected before allocating their ArrayBuffer.
+
+This is a diagnostic release. It does not establish or claim to repair the cause of the current iPhone upload failure. Blob MIME, WebCrypto availability, memory pressure and method-specific network failures remain possibilities until the phone's report arrives. No engine, gain, gate, audio-session, encoder, upload consent, endpoint or native code changes. Shared JavaScript is available for the native owner's next build.
+
+Validation: independent source review and eight sandboxed mocked-browser checks passed for all four failure stages, redaction, bounds, acknowledged metadata delivery, final-update preservation and Off/delete/stale-attempt fences. Five existing notice, strict-contract, edge, recovery and timeout suites also passed. No live recording, enrolment or public upload was used for validation.
+
 ## 2026-11-15-ios-audio-session-1
 
 Harmony now requests the browser's simultaneous playback-and-recording audio session before resuming Web Audio or asking for the microphone. Previously it only read the browser-selected session type. The request is feature-detected; missing or rejected support leaves microphone startup available. Sing still initiates audio resume synchronously in the same user gesture.
