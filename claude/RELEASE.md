@@ -1,3 +1,13 @@
+## 2026-11-16-audio-check-telemetry-1
+
+Audio-check readings are included automatically in debug events and session metadata: raw pre-canceller mic and post-limiter output level, processed level, gate/master/trim/voice gains, input makeup, browser family, AudioSession type/state, context, reported route and permitted microphone constraints. Stop retains the last active reading with its original timestamp. Fresh start and Recording off clear that in-memory cache; off-state reads cannot restore it. The route is a browser description, not proof of the physical speaker.
+
+One bounded metadata heartbeat per active eligible session, no faster than every five seconds and only after its begin acknowledgement, can carry current readings when audio/event chunks fail. It uses the existing write-only session path and credential, preserves all queue/metadata caps, omits complete/pinned flags and never enrolls merely to report. Heartbeat acknowledgements preserve unresolved chunk errors and backoff; metadata success does not mean audio arrived. Off/deletion/epoch/notice fences are retained. Active lightweight events and readings continue after the audio cap.
+
+These are sampled diagnostics. Delivery still requires a working metadata connection and the existing global backoff; not every sample is a new server write. A queued final metadata write can carry an older timestamp than a later heartbeat, so readers must inspect the timestamp rather than assume exact final-state ordering. The new snapshot is not a physical iPhone playback test or a quiet-level fix. No engine, encoder, gain, route selection, consent or codec preference changes.
+
+Validation: independent five transport groups plus snapshot/lifecycle and last-active retention checks passed with real IndexedDB and mocked networking; generated-input full-app heartbeat/Off/removal tests passed. Existing stage, strict protocol and crash-recovery regressions also pass. Chrome sandbox stayed enabled; no real microphone, private audio or public upload used.
+
 ## 2026-11-16-task-diagnostics-1
 
 Failure details now identify the queued task kind (including begin metadata), task and chunk bytes, actual Content-Type, persisted tracked attempt count, when tracking began, and task age at the reported failure. Legacy tasks do not invent an earlier retry count. These fields join the existing sanitized error and preparation/fetch stage.
