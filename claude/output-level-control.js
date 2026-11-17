@@ -5,6 +5,13 @@
   constructor({targetDb=-22,maxGain=16,upDbPerSecond=6}={}) {
    this.targetDb=targetDb;this.maxGain=maxGain;this.upDbPerSecond=upDbPerSecond;this.reset();
   }
+  static inputTarget({current,rawLevel,aboveFloor,speaker,freshVoice}) {
+   if(!aboveFloor)return current;
+   const target=Math.min(speaker?16:4,Math.max(1,(speaker ? .05 : .02)/Math.max(rawLevel,speaker ? .003125 : .005)));
+   // A tail or delayed echo may exceed the floor. It cannot earn more speaker makeup.
+   // Always allow protective reductions, and preserve the existing gain across pitch gaps.
+   return speaker&&!freshVoice&&target>current?current:target;
+  }
   reset(){this.gain=1;this.lastAt=null;this.lastNear=-Infinity;this.feedbackUntil=-Infinity;this.snapshot={gain:1,reason:'idle',targetDb:this.targetDb};}
   update({now,rms,peak,voiceActive,enabled,inputLive=false,inputSilent=false,inputAboveFloor=true,measurementFresh=false,feedback=false,volume=.7}) {
    if(!inputLive||inputSilent){

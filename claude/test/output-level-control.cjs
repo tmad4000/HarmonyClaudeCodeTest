@@ -33,3 +33,9 @@ console.log(JSON.stringify({passed:true,measuredTargetRangeDb:[-24,-20],boundedG
 
 const floorGuard=settle().c;const prior=floorGuard.gain;for(let now=6000;now<9000;now+=33){const v=floorGuard.update({inputLive:true,inputAboveFloor:false,measurementFresh:true,now,rms:.00002,peak:.00006,voiceActive:true,enabled:true});assert.equal(v.gain,prior,'below-floor residue must hold gain without raising it even with voice flag/gate held');}
 const zero=floorGuard.update({inputLive:true,inputSilent:true,measurementFresh:true,now:9100,rms:.00002,peak:.00006,voiceActive:true,enabled:true});assert.equal(zero.gain,0,'live zero input must mute DSP residue');assert.equal(zero.reason,'input-silent');
+
+// Above-floor post-burst tails cannot obtain fresh input boost; voice can resume from held gain.
+let makeup=8;for(let n=0;n<180;n++){const target=Level.inputTarget({current:makeup,rawLevel:.004,aboveFloor:true,speaker:true,freshVoice:false});assert(target<=makeup,'decaying tail must not earn makeup');makeup+=(target-makeup)*.025;}assert.equal(makeup,8);
+assert(Level.inputTarget({current:8,rawLevel:.0032,aboveFloor:true,speaker:true,freshVoice:true})>8,'fresh independent near voice may earn bounded makeup');
+assert(Level.inputTarget({current:8,rawLevel:.1,aboveFloor:true,speaker:true,freshVoice:false})<8,'tail hold never vetoes protective gain reduction');
+assert.equal(Level.inputTarget({current:4,rawLevel:0,aboveFloor:false,speaker:true,freshVoice:false}),4,'silent startup preserves baseline without boosting');
