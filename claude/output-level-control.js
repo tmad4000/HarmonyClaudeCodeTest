@@ -26,7 +26,7 @@
    } else if(feedback){
     this.feedbackUntil=now+1000;wanted=Math.min(this.gain,1);reason='measured-feedback';
    } else if(now<this.feedbackUntil){reason='feedback-recovery-hold';}
-   else if(!inputAboveFloor){wanted=Math.min(this.gain,1);reason='input-below-floor';}
+   else if(!inputAboveFloor){wanted=this.gain;reason='input-below-floor';}
    else {
     if(voiceActive)this.lastNear=now;
     if(!voiceActive&&now-this.lastNear>250){wanted=1;reason='no-near-voice';}
