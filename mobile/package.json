@@ -1,0 +1,16 @@
+{
+  "name": "harmony-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "bundle": "python3 scripts/bundle-web.py",
+    "sync": "npm run bundle && cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "7.4.3",
+    "@capacitor/ios": "7.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.4.3"
+  }
+}
