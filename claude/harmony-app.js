@@ -2113,6 +2113,7 @@ class HarmonySinger {
                 const feedback=!!(loop?.emergencyActive||loop?.hotEmergency)||now<this.duckUntil;
                 const level=this.outputLevelControl.update({now,rms:Math.sqrt(outputPower/this.outputLevelBuffer.length),peak:outputPeak,
                     voiceActive:normalVoiced&&this.gateOpen&&activeVoices,measurementFresh,
+                    inputLive:this.mediaStream?this.mediaStream.getAudioTracks().some(track=>track.readyState==='live'&&track.enabled&&!track.muted):!!this.testOsc,
                     enabled:this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&!this.calibrating,
                     feedback,volume:this.harmonyVolume});
                 this.levelGain.gain.rampTo(level.gain,.02);

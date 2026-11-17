@@ -6,7 +6,12 @@
    this.targetDb=targetDb;this.maxGain=maxGain;this.upDbPerSecond=upDbPerSecond;this.reset();
   }
   reset(){this.gain=1;this.lastAt=null;this.lastNear=-Infinity;this.feedbackUntil=-Infinity;this.snapshot={gain:1,reason:'idle',targetDb:this.targetDb};}
-  update({now,rms,peak,voiceActive,enabled,measurementFresh=false,feedback=false,volume=.7}) {
+  update({now,rms,peak,voiceActive,enabled,inputLive=false,measurementFresh=false,feedback=false,volume=.7}) {
+   if(!inputLive){
+    this.gain=0;this.lastAt=now;this.lastNear=-Infinity;
+    return(this.snapshot={gain:0,reason:'input-unavailable',targetDb:this.targetDb,enabled:!!enabled,inputLive:false,measurementFresh:false});
+   }
+   if(this.gain===0)this.gain=1; // A new live input starts at unity, not a stale pre-mute boost.
    const dt=this.lastAt===null?0:Math.max(0,Math.min(.1,(now-this.lastAt)/1000));this.lastAt=now;
    const valid=Number.isFinite(rms)&&rms>=0&&Number.isFinite(peak)&&peak>=0;
    const scale=Math.max(0,Math.min(1,Number.isFinite(volume)?volume:0))/.7;
@@ -37,7 +42,7 @@
    else if(reason==='no-near-voice')this.gain=Math.min(wanted,this.gain*Math.pow(10,3*dt/20));
    else this.gain=Math.min(wanted,this.gain*Math.pow(10,this.upDbPerSecond*dt/20));
    this.gain=Math.max(.125,Math.min(this.maxGain,this.gain));
-   return (this.snapshot={gain:this.gain,reason,targetDb:this.targetDb,targetRms:target,measuredRms:valid&&measurementFresh?rms:null,measuredPeak:valid&&measurementFresh?peak:null,voiceActive:!!voiceActive,feedback:!!feedback,enabled:!!enabled,measurementFresh:!!measurementFresh,maxGain:this.maxGain,gainLimited:this.gain>=this.maxGain,targetReached:!!(enabled&&measurementFresh&&valid&&target>0&&rms>=target*.7943&&rms<=target*1.2589)});
+   return (this.snapshot={gain:this.gain,reason,targetDb:this.targetDb,targetRms:target,measuredRms:valid&&measurementFresh?rms:null,measuredPeak:valid&&measurementFresh?peak:null,voiceActive:!!voiceActive,feedback:!!feedback,enabled:!!enabled,inputLive:!!inputLive,measurementFresh:!!measurementFresh,maxGain:this.maxGain,gainLimited:this.gain>=this.maxGain,targetReached:!!(enabled&&measurementFresh&&valid&&target>0&&rms>=target*.7943&&rms<=target*1.2589)});
   }
  }
  root.HarmonyOutputLevelControl=OutputLevelControl;

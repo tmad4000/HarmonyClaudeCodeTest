@@ -122,7 +122,7 @@ function meterAndGateChecks() {
             await page.waitForTimeout(1800);
             const silent = await page.evaluate(() => harmonySinger.debugAudioLevels());
             assert.equal(silent.rawMicRms, 0);
-            assert(silent.outputRms < 1e-5, 'holding the gate open must not generate sound with zero mic input');
+            assert(silent.outputRms < 1e-5, 'holding the gate open must not generate sound with zero mic input: '+JSON.stringify({speaker,...silent}));
             await page.locator('#startBtn').click();
             assert.equal(await page.evaluate(() => harmonySinger.debugContinuous), false);
             assert.equal(backendAttempts, 0);
