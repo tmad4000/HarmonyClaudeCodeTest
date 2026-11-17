@@ -5,9 +5,9 @@
   constructor({targetDb=-22,maxGain=16,upDbPerSecond=6}={}) {
    this.targetDb=targetDb;this.maxGain=maxGain;this.upDbPerSecond=upDbPerSecond;this.reset();
   }
-  static inputTarget({current,rawLevel,aboveFloor,speaker,freshVoice}) {
+  static inputTarget({current,rawLevel,aboveFloor,speaker,highGain=speaker,freshVoice}) {
    if(!aboveFloor)return current;
-   const target=Math.min(speaker?16:4,Math.max(1,(speaker ? .05 : .02)/Math.max(rawLevel,speaker ? .003125 : .005)));
+   const target=Math.min(highGain?16:4,Math.max(1,(highGain ? .05 : .02)/Math.max(rawLevel,highGain ? .003125 : .005)));
    // A tail or delayed echo may exceed the floor. It cannot earn more speaker makeup.
    // Always allow protective reductions, and preserve the existing gain across pitch gaps.
    return speaker&&!freshVoice&&target>current?current:target;

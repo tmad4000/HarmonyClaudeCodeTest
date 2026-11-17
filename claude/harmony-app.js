@@ -2007,8 +2007,8 @@ class HarmonySinger {
                 // Only the independently guarded third/voice path gets extra quiet-input makeup.
                 // Other modes retain their previous 4x ceiling; the final limiter/reference stay intact.
                 const speakerLevel=this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&this.usesIndependentNearEvidence();
-                const freshVoice=decision.independentNear===true;
-                const target=HarmonyOutputLevelControl.inputTarget({current:this.inputMakeup,rawLevel,aboveFloor:inputAboveFloor,speaker:speakerLevel,freshVoice});
+                const freshVoice=independentPolicy?decision.independentNear===true:decision.voiced===true&&decision.quietReference===true;
+                const target=HarmonyOutputLevelControl.inputTarget({current:this.inputMakeup,rawLevel,aboveFloor:inputAboveFloor,speaker:this.speakerMode,highGain:speakerLevel,freshVoice});
                 this.inputGainDecision={inputAboveFloor,processedRms:rms,target,measurementFresh,freshVoice};
                 this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup ? .2 : .025);
                 this.mic.gain.rampTo(this.inputMakeup,.12);

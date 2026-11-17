@@ -39,3 +39,6 @@ let makeup=8;for(let n=0;n<180;n++){const target=Level.inputTarget({current:make
 assert(Level.inputTarget({current:8,rawLevel:.0032,aboveFloor:true,speaker:true,freshVoice:true})>8,'fresh independent near voice may earn bounded makeup');
 assert(Level.inputTarget({current:8,rawLevel:.1,aboveFloor:true,speaker:true,freshVoice:false})<8,'tail hold never vetoes protective gain reduction');
 assert.equal(Level.inputTarget({current:4,rawLevel:0,aboveFloor:false,speaker:true,freshVoice:false}),4,'silent startup preserves baseline without boosting');
+
+assert.equal(Level.inputTarget({current:2,rawLevel:.001,aboveFloor:true,speaker:true,highGain:false,freshVoice:false}),2,'all speaker modes hold makeup on tails, including legacy4x profile');
+assert.equal(Level.inputTarget({current:2,rawLevel:.001,aboveFloor:true,speaker:true,highGain:false,freshVoice:true}),4,'legacy speaker profile may recover to4x with fresh voice');
