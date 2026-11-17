@@ -1,4 +1,5 @@
 const assert=require('assert/strict');
+const fs=require('fs'),path=require('path'),vm=require('vm');
 const Level=require('../output-level-control.js');
 const {SpeakerLoopControl}=require('../echo-canceller.js');
 const db=x=>20*Math.log10(x);
@@ -20,4 +21,11 @@ x=bypass.update({measurementFresh:true,now:6100,rms:.01,peak:.03,voiceActive:tru
 const loop=new SpeakerLoopControl({mode:'speakers'});loop.setCoupling(1);
 const measured=loop.update({measurementFresh:true,now:0,voiced:true,stats:{adapted:false,leak:1,outPow:.01,refPow:.01,echoPow:0}});
 assert(measured.emergencyActive&&measured.trim<1,'real measured coupling still attenuates');
-console.log(JSON.stringify({passed:true,measuredTargetRangeDb:[-24,-20],boundedGain:true,respectsUserVolume:true,noSilenceChasing:true,noTailBoost:true,hotCut:true,feedbackHold:true,missingMeterUnity:true}));
+const box={window:{addEventListener(){}},navigator:{},console};vm.createContext(box);
+vm.runInContext(fs.readFileSync(path.join(__dirname,'../harmony-app.js'),'utf8')+';globalThis.TestSinger=HarmonySinger;',box);
+const h=Object.create(box.TestSinger.prototype);h.audioContext={state:'running',currentTime:1};h.usingCanceller=()=>true;h.aecStatsAt=1000;
+assert(h.levelMeasurementsFresh(1000));assert(!h.levelMeasurementsFresh(1301),'stalled render clock must not drive gain');
+h.audioContext.currentTime=1.2;assert(h.levelMeasurementsFresh(1302));h.audioContext.currentTime=1.3;assert(!h.levelMeasurementsFresh(1700),'stale AEC frame must not drive gain');
+h.aecStatsAt=1700;assert(h.levelMeasurementsFresh(1700));h.audioContext.state='suspended';assert(!h.levelMeasurementsFresh(1733));
+h.audioContext.state='running';h.audioContext.currentTime=1.4;h.aecStatsAt=1750;assert(h.levelMeasurementsFresh(1770));
+console.log(JSON.stringify({passed:true,measuredTargetRangeDb:[-24,-20],boundedGain:true,respectsUserVolume:true,noSilenceChasing:true,noTailBoost:true,hotCut:true,feedbackHold:true,missingMeterUnity:true,renderClockAndAecFreshness:true}));
