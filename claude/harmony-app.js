@@ -1952,7 +1952,7 @@ class HarmonySinger {
         [this.mic, this.gateGain, this.trimGain, this.lpFilter, this.chorus, this.reverb, this.levelGain, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
             .forEach(n => { if (n) { try { n.dispose(); } catch (e) { /* ignore */ } } });
         this.mic = null; this.gateGain = null; this.trimGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
-        this.masterGain = null; this.levelGain = null; this.outputLevelControl.reset(); this.outputLevelBuffer=null; this.outputRenderClock=null; this.aecStatsAt=null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
+        this.masterGain = null; this.levelGain = null; this.outputLevelControl.reset(); this.outputLevelBuffer=null; this.inputSilenceBuffer=null; this.outputRenderClock=null; this.aecStatsAt=null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
         this.smoothedPitch = null;
         this.playedPitchTail = [];
         this.stableMidi = null;
@@ -2001,13 +2001,13 @@ class HarmonySinger {
             // thirds configuration. Coherent and instrumental modes retain the
             // original classifier/controller contract, including initial shifts.
             const independentPolicy = this.usesIndependentNearEvidence();
-            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
+            const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;const inputAboveFloor=Number.isFinite(rms)&&rms>Math.max(decision.threshold||.0007,(decision.noiseFloor||0)*1.8);voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
             if (measurementFresh && this.mic && (this.isIOS || (this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&this.usesIndependentNearEvidence()))) {
                 const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);
                 // Only the independently guarded third/voice path gets extra quiet-input makeup.
                 // Other modes retain their previous 4x ceiling; the final limiter/reference stay intact.
                 const speakerLevel=this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&this.usesIndependentNearEvidence();
-                const target=Math.min(speakerLevel?16:4,Math.max(1,(speakerLevel ? .05 : .02)/Math.max(rawLevel,speakerLevel ? .003125 : .005)));
+                const target=inputAboveFloor&&decision.voiced?Math.min(speakerLevel?16:4,Math.max(1,(speakerLevel ? .05 : .02)/Math.max(rawLevel,speakerLevel ? .003125 : .005))):Math.min(1,this.inputMakeup);
                 this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup ? .2 : .025);
                 this.mic.gain.rampTo(this.inputMakeup,.12);
             }
@@ -2111,7 +2111,14 @@ class HarmonySinger {
                 for(const sample of this.outputLevelBuffer){outputPower+=sample*sample;outputPeak=Math.max(outputPeak,Math.abs(sample));}
                 const activeVoices=Object.values(this.gains).some(g=>g.gain.value>0)||this.instGain?.gain.value>0;
                 const feedback=!!(loop?.emergencyActive||loop?.hotEmergency)||now<this.duckUntil;
-                const level=this.outputLevelControl.update({now,rms:Math.sqrt(outputPower/this.outputLevelBuffer.length),peak:outputPeak,
+                const rawMeter=this.debugRawAnalyser||(!this.aecNode?this.guardAnalyser:null);
+                let inputSilent=rms===0;
+                if(rawMeter){
+                    if(!this.inputSilenceBuffer||this.inputSilenceBuffer.length!==rawMeter.fftSize)this.inputSilenceBuffer=new Float32Array(rawMeter.fftSize);
+                    rawMeter.getFloatTimeDomainData(this.inputSilenceBuffer);
+                    inputSilent=this.inputSilenceBuffer.every(value=>value===0);
+                }
+                const level=this.outputLevelControl.update({inputSilent,inputAboveFloor,now,rms:Math.sqrt(outputPower/this.outputLevelBuffer.length),peak:outputPeak,
                     voiceActive:normalVoiced&&this.gateOpen&&activeVoices,measurementFresh,
                     inputLive:this.mediaStream?this.mediaStream.getAudioTracks().some(track=>track.readyState==='live'&&track.enabled&&!track.muted):!!this.testOsc,
                     enabled:this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&!this.calibrating,

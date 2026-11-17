@@ -6,10 +6,10 @@
    this.targetDb=targetDb;this.maxGain=maxGain;this.upDbPerSecond=upDbPerSecond;this.reset();
   }
   reset(){this.gain=1;this.lastAt=null;this.lastNear=-Infinity;this.feedbackUntil=-Infinity;this.snapshot={gain:1,reason:'idle',targetDb:this.targetDb};}
-  update({now,rms,peak,voiceActive,enabled,inputLive=false,measurementFresh=false,feedback=false,volume=.7}) {
-   if(!inputLive){
+  update({now,rms,peak,voiceActive,enabled,inputLive=false,inputSilent=false,inputAboveFloor=true,measurementFresh=false,feedback=false,volume=.7}) {
+   if(!inputLive||inputSilent){
     this.gain=0;this.lastAt=now;this.lastNear=-Infinity;
-    return(this.snapshot={gain:0,reason:'input-unavailable',targetDb:this.targetDb,enabled:!!enabled,inputLive:false,measurementFresh:false});
+    return(this.snapshot={gain:0,reason:inputSilent?'input-silent':'input-unavailable',targetDb:this.targetDb,enabled:!!enabled,inputLive:false,measurementFresh:false});
    }
    if(this.gain===0)this.gain=1; // A new live input starts at unity, not a stale pre-mute boost.
    const dt=this.lastAt===null?0:Math.max(0,Math.min(.1,(now-this.lastAt)/1000));this.lastAt=now;
@@ -26,6 +26,7 @@
    } else if(feedback){
     this.feedbackUntil=now+1000;wanted=Math.min(this.gain,1);reason='measured-feedback';
    } else if(now<this.feedbackUntil){reason='feedback-recovery-hold';}
+   else if(!inputAboveFloor){wanted=Math.min(this.gain,1);reason='input-below-floor';}
    else {
     if(voiceActive)this.lastNear=now;
     if(!voiceActive&&now-this.lastNear>250){wanted=1;reason='no-near-voice';}
