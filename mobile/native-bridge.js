@@ -70,7 +70,7 @@ window.addEventListener('DOMContentLoaded', () => {
   h.observeOutputRoute?.(data);
  };
  h.start=async function(...args){
-  if(starting||h.starting||h.isRunning)return;
+  if(starting||h.outputChoiceBusy||h.starting||h.isRunning)return;
   if(h.ensureOutputConsent&&!h.ensureOutputConsent())return;
   starting=true;h.outputChoiceBusy=true;h.renderOutputConsent?.();const own=++generation;
   captureAttempt=null;attemptContext={contextBefore:contextState(),userActivation:activation(),mediaDevices:!!media,getUserMedia:typeof media?.getUserMedia==='function',secureContext:window.isSecureContext};
@@ -97,7 +97,7 @@ window.addEventListener('DOMContentLoaded', () => {
    await reportFailure(error).catch(e=>h.logEvent('diagnostic-error',{message:String(e.message||e)}));
    await p.release().catch(()=>{});
   }
-  finally { starting=false;try{if(!h.isRunning)await clearMedia();}finally{h.outputChoiceBusy=false;h.renderOutputConsent?.();} }
+  finally { try{if(!h.isRunning)await clearMedia();}finally{starting=false;h.outputChoiceBusy=false;h.renderOutputConsent?.();} }
  };
  h.stop=function(...args){if(!args[0])generation++;try{return originalStop(...args);}finally{if(!args[0])void clearMedia();}};
  const routeIdentity=data=>JSON.stringify({sampleRate:data?.sampleRate,inputs:(data?.inputs||[]).map(x=>({type:x.type,name:x.name})),outputs:(data?.outputs||[]).map(x=>({type:x.type,name:x.name}))});
