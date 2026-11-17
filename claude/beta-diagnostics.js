@@ -37,7 +37,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   masterGain:h.masterGain?.gain?.value??null,instrumentGain:h.instGain?.gain?.value??null,
   harmonyVolume:h.harmonyVolume??null,speakerTrim:h.speakerTrim??null,
   protectionMode:h.loopControl?.mode??null,extraProtection:!!h.extraProtection,
-  continuous:!!h.debugContinuous,destinationMuted:!!Tone.getDestination().mute,
+  continuous:!!h.debugContinuous,selectedMode:h.speakerMode?'speakers':'headphones',speakerApproved:!!h.speakerApproved,detectedOutput:h.detectedOutput||'unknown',outputConsentPending:!!h.outputConsentPending,destinationMuted:!!Tone.getDestination().mute,
   destinationDb:Tone.getDestination().volume.value,
  });
  const audioCheckSnapshot=()=>{

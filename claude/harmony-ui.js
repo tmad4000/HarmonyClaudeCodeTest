@@ -32,7 +32,7 @@ window.addEventListener('DOMContentLoaded', () => {
  oldHeader.remove();container.replaceChildren(app,sheet);$('sheetVersion').textContent=document.querySelector('meta[name="harmony-version"]').content;$('sheetCheckVersion').onclick=()=>$('checkVersion').click();
  const open=(id)=>{if(!sheet.open)sheet.showModal();if(id)$(id)?.scrollIntoView({block:'start'});};
  $('openSettings').onclick=()=>open();$('debugChip').onclick=()=>open('debugSessions');$('openKey').onclick=()=>open('keyLabel');$('closeSettings').onclick=()=>sheet.close();sheet.addEventListener('click',e=>{if(e.target===sheet)sheet.close();});
- h.onOutputSafetyChange=()=>{const status=document.createElement('div');status.className='app-toast';status.setAttribute('role','status');app.append(status);status.textContent='Speakers detected. Echo removal enabled. ';const undo=document.createElement('button');undo.textContent='Undo';undo.onclick=()=>{h.setOutputPosition(0);$('outputPosition').dispatchEvent(new Event('change',{bubbles:true}));status.remove();};status.append(undo);$('outputPosition').dispatchEvent(new Event('change',{bubbles:true}));};
+ h.onOutputSafetyChange=()=>h.renderOutputConsent();
  const notice=$('firstDebugNotice');let seen=false;try{seen=localStorage.getItem('harmony-debug-notice-v1')==='seen';}catch(_){}
  notice.hidden=seen||!window.harmonyDebug.enabled;
  const dismiss=()=>{notice.hidden=true;try{localStorage.setItem('harmony-debug-notice-v1','seen');}catch(_){}};

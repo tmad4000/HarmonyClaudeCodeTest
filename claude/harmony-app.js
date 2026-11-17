@@ -328,9 +328,12 @@ class HarmonySinger {
         this.speakerMode = this.params.get('speaker') !== '0';
         this.outputPosition = this.speakerMode ? 1 : 0;
         this.extraProtection = false;
-        this.speakerChecks=new Map();this.outputDefaultPending=!this.params.has('speaker');
+        this.speakerChecks=new Map();this.outputDefaultPending=false;
+        this.detectedOutput='unknown';this.outputRouteSource='unavailable';this.outputConsentPending=false;
+        window.addEventListener('harmony-ui-ready',()=>this.renderOutputConsent(),{once:true});
+        try { this.speakerApproved=localStorage.getItem('harmony-speaker-approved-v1')==='true'; } catch (_) { this.speakerApproved=false; }
         try{const saved=JSON.parse(localStorage.getItem('harmony-singer-settings-v1')||'{}');if(typeof saved.speaker==='boolean'||[0,1].includes(saved.outputProtection))this.outputDefaultPending=false;}catch(_){}
-        navigator.mediaDevices?.addEventListener?.('devicechange',async()=>{this.speakerChecks.clear();const label=await this.readOutputLabel();this.logEvent('device-change',{outputLabel:label});if(!this.speakerMode&&/speaker|built.in|internal/i.test(label)&&!/headphone|airpod|bud|earphone/i.test(label)){this.setOutputPosition(1);this.onOutputSafetyChange?.();}});
+        navigator.mediaDevices?.addEventListener?.('devicechange',async()=>{this.speakerChecks.clear();const label=await this.readOutputLabel();this.logEvent('device-change',{outputLabel:label});if(this.outputRouteSource!=='native')this.observeOutputRoute({label,source:'browser-label'});});
         // How speaker mode deals with its own sound coming back into the mic:
         //   canceller - our reference echo canceller (echo-canceller.js): subtracts the known playback,
         //               never turns the microphone down. Default.
@@ -451,7 +454,7 @@ class HarmonySinger {
             dryVolume: this.dryVolume, reverbAmount: this.reverbAmount, chorusAmount: this.chorusAmount,
             smoothing: this.smoothing, harmonyPosition: this.harmonyPosition, choirVoices: { ...this.choirVoices },
             backing: this.backing, backingStyle: this.backingStyle,
-            outputProtection: this.outputPosition, extraProtection: this.extraProtection, outputLabel:this.outputLabel,
+            outputProtection: this.outputPosition, detectedOutput:this.detectedOutput, speakerApproved:!!this.speakerApproved, outputConsentPending:!!this.outputConsentPending, extraProtection: this.extraProtection, outputLabel:this.outputLabel,
             debugContinuous: this.debugContinuous,
             sampleRate: this.audioContext ? this.audioContext.sampleRate : null,
             notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz))
@@ -816,13 +819,63 @@ class HarmonySinger {
         }
     }
 
+    observeOutputRoute(data) {
+        const ports=data.outputs||[];
+        const label=data.label||ports.map(p=>p.name+' '+p.type).join(' ');
+        this.outputRouteSource=data.nativeBuild?'native':(data.source||'browser-label');
+        this.detectedOutput=ports.some(p=>/Speaker|Receiver|built.in/i.test(p.type))?'speaker'
+            :/headphone|airpod|earphone|earbud/i.test(label)?'headphones'
+            :/speaker|built.in|internal/i.test(label)?'speaker':'unknown';
+        // Detection is advice, never an instruction to overwrite the chosen processing mode.
+        this.logEvent('output-choice-route',{detected:this.detectedOutput,selected:this.speakerMode?'speakers':'headphones',source:this.outputRouteSource});
+        if(this.isRunning&&!this.speakerMode&&this.detectedOutput==='speaker'){this.stop();this.outputConsentPending=true;}
+        this.renderOutputConsent();
+    }
+
+    ensureOutputConsent() {
+        const allowed=this.detectedOutput==='headphones'||(this.speakerMode&&this.speakerApproved)
+            ||(!this.speakerMode&&this.detectedOutput==='unknown');
+        this.outputConsentPending=!allowed;
+        this.renderOutputConsent();
+        if(!allowed){this.setStatus('Choose speaker playback or connect headphones','ready');document.getElementById('useSpeakerAnyway')?.focus();}
+        return allowed;
+    }
+
+    approveSpeakerOutput() {
+        if(this.outputChoiceBusy||this.starting)return;
+        const start=this.outputConsentPending;
+        this.outputConsentPending=false;this.speakerApproved=true;
+        try {
+            localStorage.setItem('harmony-speaker-approved-v1','true');
+            const state=JSON.parse(localStorage.getItem('harmony-singer-settings-v1')||'{}');
+            localStorage.setItem('harmony-singer-settings-v1',JSON.stringify({...state,speaker:true,outputProtection:1}));
+        } catch (_) { /* Explicit choice still works for this session. */ }
+        this.setEchoMode('canceller');this.setSpeakerMode(true);
+        this.logEvent('speaker-output-approved',{remembered:true,echoMode:this.echoMode});
+        this.renderOutputConsent();
+        if(start)void this.start();
+    }
+
+    renderOutputConsent() {
+        const area=document.querySelector('.sing-area');if(!area)return;
+        let notice=document.getElementById('speakerConsentNotice');
+        if(!notice){notice=document.createElement('section');notice.id='speakerConsentNotice';notice.className='speaker-consent-notice';notice.setAttribute('role','status');
+            const text=document.createElement('p');text.className='hint';
+            const button=document.createElement('button');button.id='useSpeakerAnyway';button.type='button';button.className='secondary-button';button.textContent='Use speaker anyway';button.onclick=()=>this.approveSpeakerOutput();
+            notice.append(text,button);area.before(notice);}
+        const approved=this.speakerMode&&this.speakerApproved;
+        notice.hidden=this.detectedOutput==='headphones';
+        notice.querySelector('p').textContent=(this.detectedOutput==='unknown'?'No headphones detected. ':'')+'Speaker mode: harmonies may feed back into the mic; '+(this.speakerMode&&this.echoMode==='none'?'echo protection is off':'using echo protection')+(approved?'. Your speaker choice is remembered.':'. Choose speaker playback or connect headphones.');
+        notice.querySelector('button').hidden=approved;notice.querySelector('button').disabled=!!this.outputChoiceBusy||!!this.starting;
+    }
+
     toggleSpeakerMode() {
         this.setSpeakerMode(!this.speakerMode);
     }
 
     setExtraProtection(on) {
         this.extraProtection=!!on;
-        if(this.loopControl){this.loopControl.mode=on?'protected':'speakers';this.loopControl.holdMs=450;this.loopControl.trimHigh=on?0.1:0.25;this.loopControl.trimLow=on?0.07:0.17;}
+        if(this.loopControl){this.loopControl.mode='speakers';this.loopControl.holdMs=450;this.loopControl.trimHigh=on?0.1:0.25;this.loopControl.trimLow=on?0.07:0.17;}
         if(this.lpFilter&&this.speakerMode)this.lpFilter.frequency.rampTo(on?8000:10000,0.1);
         if(!on)this.duckUntil=0;
         this.logEvent('extra-protection',{on:!!on}); this.updateGains();
@@ -869,6 +922,7 @@ class HarmonySinger {
     }
 
     renderSpeakerMode() {
+        this.renderOutputConsent();
         const group = document.getElementById('speakerModeToggle');
         if (group) {
             group.classList.toggle('on', this.speakerMode);
@@ -1120,6 +1174,7 @@ class HarmonySinger {
 
     async start() {
         if (this.starting || this.isRunning) return;
+        if (!this.ensureOutputConsent()) return;
         this.starting = true;
         const generation = this.startGeneration = (this.startGeneration || 0) + 1;
         const current = () => this.startGeneration === generation;
@@ -1259,11 +1314,8 @@ class HarmonySinger {
             this.outputLabel=await this.readOutputLabel();
             checkCurrent();
             this.logEvent('output-route',{label:this.outputLabel,source:'Browser default description; physical route not guaranteed'});
-            if(this.outputDefaultPending&&/headphone|airpod|bud|earphone/i.test(this.outputLabel)){
-                this.speakerMode=false;this.outputPosition=0;useCanceller=false;this.renderSpeakerMode();
-                const track=this.mediaStream?.getAudioTracks()[0];if(track)await track.applyConstraints({echoCancellation:false,noiseSuppression:false,autoGainControl:false});
-            }
-            this.outputDefaultPending=false;
+            if(this.outputRouteSource!=='native')this.observeOutputRoute({label:this.outputLabel,source:'browser-label'});
+            if(!this.ensureOutputConsent()){ this.stop(); return; }
             checkCurrent();
             // ---- simulated room (tests): whatever we play comes back into the "microphone"
             this.roomNodes = [];
@@ -1497,6 +1549,7 @@ class HarmonySinger {
             this.setStatus(this.describeError(err), 'error');
         } finally {
             this.starting = false;
+            this.renderOutputConsent();
         }
     }
 
@@ -1754,7 +1807,7 @@ class HarmonySinger {
         const four = FOUR_VOICE_MODES.includes(this.currentMode);
         // Without the canceller, speaker mode needs a fixed cut for gain-before-feedback. With it, level is
         // only held back when the measured loop needs it (speakerTrim, applied on trimGain).
-        const cap = (this.speakerMode && (!this.usingCanceller() || this.extraProtection)) ? 0.7 : 1;
+        const cap = (this.speakerMode && !this.usingCanceller()) ? 0.7 : 1;
         const duck = (!this.debugContinuous && this.speakerMode && performance.now() < this.duckUntil) ? 0.5 : 1;
         const voiceOn = (this.backing === 'voice' || this.backing === 'voice+piano') ? 1 : 0;
         if (this.instGain) this.instGain.gain.value = this.instrumentKind() ? this.harmonyVolume * 0.9 * (this.speakerMode ? 0.85 : 1) : 0;
@@ -1930,7 +1983,15 @@ class HarmonySinger {
             // original classifier/controller contract, including initial shifts.
             const independentPolicy = this.usesIndependentNearEvidence();
             const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
-            if(this.isIOS&&this.mic){const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);const target=Math.min(4,Math.max(1,.02/Math.max(rawLevel,.005)));this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup?.2:.025);this.mic.gain.rampTo(this.inputMakeup,.12);}
+            if (this.isIOS && this.mic) {
+                const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);
+                // Only the independently guarded third/voice path gets extra quiet-input makeup.
+                // Other modes retain their previous 4x ceiling; the final limiter/reference stay intact.
+                const speakerLevel=this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&this.usesIndependentNearEvidence();
+                const target=Math.min(speakerLevel?16:4,Math.max(1,(speakerLevel ? .05 : .02)/Math.max(rawLevel,speakerLevel ? .003125 : .005)));
+                this.inputMakeup+=(target-this.inputMakeup)*(target<this.inputMakeup ? .2 : .025);
+                this.mic.gain.rampTo(this.inputMakeup,.12);
+            }
 
             // Speaker mode with the canceller: ask the loop controller whether what we hear is the
             // singer or just the part of our own harmonies the canceller could not remove. Leftover

@@ -67,11 +67,12 @@ window.addEventListener('DOMContentLoaded', () => {
  window.harmonySessionMetadata=()=>({...originalMetadata?.(),native:window.harmonyNativeRoute?.nativeBuild||{platform:'ios',sessionOwner:'webkit'},nativeRoute:window.harmonyNativeRoute||null});
  const applyRoute = data => {
   route(data);
-  h.setSpeakerMode(data.outputType==='speaker');
+  h.observeOutputRoute?.(data);
  };
  h.start=async function(...args){
   if(starting||h.starting||h.isRunning)return;
-  starting=true;const own=++generation;
+  if(h.ensureOutputConsent&&!h.ensureOutputConsent())return;
+  starting=true;h.outputChoiceBusy=true;h.renderOutputConsent?.();const own=++generation;
   captureAttempt=null;attemptContext={contextBefore:contextState(),userActivation:activation(),mediaDevices:!!media,getUserMedia:typeof media?.getUserMedia==='function',secureContext:window.isSecureContext};
   // Match the reviewed web session selection before the native tap-time resume.
   try { if(navigator.audioSession)navigator.audioSession.type='play-and-record'; } catch(_) {}
@@ -85,7 +86,8 @@ window.addEventListener('DOMContentLoaded', () => {
    const audioError=await audioReady;
    if(own!==generation){await p.release();return;}
    if(audioError)throw audioError;
-   applyRoute(data);await originalStart(...args);
+   applyRoute(data);if(h.ensureOutputConsent&&!h.ensureOutputConsent()){await p.release();return;}await originalStart(...args);
+   if(h.outputConsentPending){await p.release();return;}
    // The engine reports failures in lastError rather than rejecting its promise.
    if(h.lastError){await reportFailure(h.lastError);await p.release();return;}
    if(own!==generation){originalStop();if(attemptContext?.interruption)await reportFailure(Object.assign(new Error('Audio was interrupted while the microphone was starting; tap Sing again.'),{name:'AbortError'}));await p.release();return;}
@@ -95,13 +97,13 @@ window.addEventListener('DOMContentLoaded', () => {
    await reportFailure(error).catch(e=>h.logEvent('diagnostic-error',{message:String(e.message||e)}));
    await p.release().catch(()=>{});
   }
-  finally { starting=false;if(!h.isRunning)await clearMedia(); }
+  finally { starting=false;try{if(!h.isRunning)await clearMedia();}finally{h.outputChoiceBusy=false;h.renderOutputConsent?.();} }
  };
  h.stop=function(...args){if(!args[0])generation++;try{return originalStop(...args);}finally{if(!args[0])void clearMedia();}};
  const routeIdentity=data=>JSON.stringify({sampleRate:data?.sampleRate,inputs:(data?.inputs||[]).map(x=>({type:x.type,name:x.name})),outputs:(data?.outputs||[]).map(x=>({type:x.type,name:x.name}))});
  p.addListener('routeChanged',data=>{if(starting){applyRoute(data);h.logEvent('native-startup-route',data);return;}if(routeIdentity(data)===routeIdentity(window.harmonyNativeRoute)){route(data);h.logEvent('native-route-unchanged',{reason:data.reason});return;}h.stop();applyRoute(data);h.logEvent('native-stopped',{reason:'route-change'});});
- p.addListener('sessionChanged',route);
+ p.addListener('sessionChanged',data=>{route(data);h.observeOutputRoute?.(data);});
  p.addListener('interrupted',data=>{if(starting&&attemptContext)attemptContext.interruption=data;h.stop();h.logEvent('native-stopped',data);});
- p.getRoute().then(route).catch(()=>{});
+ p.getRoute().then(applyRoute).catch(()=>{});
  void clearMedia();
 });

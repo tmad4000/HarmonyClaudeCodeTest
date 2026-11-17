@@ -8,7 +8,7 @@ const ROOT = path.resolve(__dirname, '..');
 
 function meterAndGateChecks() {
     let now = 1000;
-    const sandbox = { window: { addEventListener() {} }, navigator: {}, performance: { now: () => now }, URLSearchParams, Float32Array, console };
+    const sandbox = { Tone:{getDestination:()=>({mute:false,volume:{value:0}})}, window: { addEventListener() {} }, navigator: {}, performance: { now: () => now }, URLSearchParams, Float32Array, console };
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'harmony-app.js'), 'utf8') + '\nglobalThis.TestSinger=HarmonySinger;', sandbox);
     const h = Object.create(sandbox.TestSinger.prototype);
@@ -79,6 +79,7 @@ function meterAndGateChecks() {
                 return route.fulfill({ path: file });
             });
             await page.goto(`https://harmony.jacobcole.net/?speaker=${speaker}&check=0&debug=0`);
+            if(speaker)await page.getByRole('button',{name:'Use speaker anyway',exact:true}).click();
             await page.locator('#startBtn').click();
             await page.waitForFunction(() => harmonySinger.isRunning && Number.isFinite(harmonySinger.stableMidi));
             const before = await page.evaluate(() => {

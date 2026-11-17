@@ -38,3 +38,4 @@ body{background:var(--app-page);color:var(--app-ink)} .container{padding:0;max-w
 
 .recording-history-note { color: var(--app-muted); font-size: 13px; line-height: 1.5; margin: 12px auto 0; max-width: 38rem; text-align: center; }
 .recording-history-note button { color: inherit; font: inherit; background: none; border: 0; padding: 4px; text-decoration: underline; cursor: pointer; }
+.speaker-consent-notice{flex:none;margin:8px 20px 0;padding:10px 12px;border:1px solid var(--app-line);border-radius:12px;background:var(--app-surface);font-size:12px}.speaker-consent-notice[hidden]{display:none}.speaker-consent-notice p{margin:0 0 6px;line-height:1.4;color:var(--app-muted)}.speaker-consent-notice button{min-height:44px;padding:8px 14px;border:1px solid var(--app-strong);border-radius:9px;background:var(--app-raised);color:var(--app-ink);font:inherit;cursor:pointer}
