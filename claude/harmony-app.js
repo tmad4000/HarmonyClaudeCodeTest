@@ -2019,7 +2019,7 @@ class HarmonySinger {
             let loop = null;
             if (this.usingCanceller() && this.aecNode && this.loopControl) {
                 loop = this.loopControl.update({ now, voiced: voiceLike, stats: this.aecStats,
-                    ...(independentPolicy?{independentNear:decision.independentNear,nearSeeded:decision.nearSeeded,playedAmbiguous:decision.matchesPlayed}:{}) });
+                    ...(independentPolicy?{independentNear:decision.independentNear,nearSeeded:decision.nearSeeded,nearLeaseFresh:Number.isFinite(decision.seedAgeMs)&&decision.seedAgeMs<=3000,playedAmbiguous:decision.matchesPlayed}:{}) });
                 if ((independentPolicy?!loop.nearOk:(!loop.nearOk&&!decision.quietReference&&!decision.nearDominant)) || this.calibrating) voiced = false;
                 if (Math.abs(loop.trim - this.speakerTrim) > 0.01 || (loop.trim === 1 && this.speakerTrim !== 1)) {
                     this.speakerTrim = loop.trim;

@@ -164,3 +164,10 @@ for(const pitch of [177,354,88.5]){
 console.log(JSON.stringify({passed:true,quietUnknownContinuity:true,noUnseededEcho:true,
     noUnisonOctaveRenewal:true,recentPlayedTargetsProtected:true,knownEchoVeto:true,
     firstMeasurementUnbiased:true,suspectDoesNotCalibrate:true,hotEmergencyUnchanged:true}));
+
+// A previously learned room model cannot reopen after its independent singer seed expires.
+const expiredRoom=new SpeakerLoopControl({mode:'speakers',holdMs:450});expiredRoom.setCoupling(.001);
+const expiredStats={micPow:.001,outPow:.001,echoPow:1e-8,refPow:.0001,adapted:true,suspect:false,leak:.05};
+let expired=expiredRoom.update({now:10000,voiced:true,independentNear:false,nearSeeded:true,nearLeaseFresh:false,playedAmbiguous:false,stats:expiredStats});
+assert.equal(expired.powerNearOk,true);assert.equal(expired.nearOk,false);assert.equal(expired.gateOpen,false,'expired near seed cannot bootstrap delayed echo');
+expired=expiredRoom.update({now:10033,voiced:true,independentNear:true,nearSeeded:true,nearLeaseFresh:true,playedAmbiguous:false,stats:expiredStats});assert.equal(expired.gateOpen,true,'fresh independent singer evidence can reopen');
