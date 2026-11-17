@@ -689,6 +689,9 @@
             // A learned model alone cannot bootstrap a take from delayed echo of
             // reference playback. Establish the first quiet near-end seed first.
             if (explicitEvidence && s.nearSeeded !== true && !s.independentNear) nearOk = false;
+            // Learned power cannot reopen a closed gate using an expired singer seed.
+            // Continuing a live phrase retains its existing conservative power policy.
+            if (explicitEvidence && !(now-this.lastNearAt<this.holdMs) && s.nearLeaseFresh === false && !s.independentNear) nearOk = false;
             this.trim = Math.min(1, Math.max(this.minTrim, this.trim));
             if (!st) { this.trim = 1; this.bound = 1; }
             let applied = Math.max(this.minTrim, Math.min(this.trim, this.bound));
@@ -696,7 +699,7 @@
                 const leak=st&&st.adapted&&!st.suspect?Math.max(st.leak,this.leakFloor):1;
                 // Unknown digital-to-acoustic gain is not a measured emergency.
                 // Keep the absolute hot-output safeguard even before calibration.
-                const loopPower=st&&(this.couplingKnown||!explicitEvidence)?leak*this.coupling*this.appGain:0;
+                const loopPower=st&&this.couplingKnown?leak*this.coupling*this.appGain:0;
                 if(loopPower>0.5)this.emergencyActive=true;
                 else if(loopPower<0.25)this.emergencyActive=false;
                 const target=this.emergencyActive?Math.max(0.5,Math.min(1,Math.sqrt(0.5/Math.max(loopPower,1e-12)))):1;
