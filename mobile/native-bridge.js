@@ -56,9 +56,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const context=window.Tone?.getContext()?.rawContext;
   let suspended;
   try{suspended=context&&context.state!=='closed'&&context.state!=='suspended'?context.suspend():Promise.resolve();}catch(error){suspended=Promise.reject(error);}
-  idleCleanup=Promise.resolve(suspended).then(()=>p.release()).catch(error=>{h.logEvent('native-idle-cleanup-error',{name:error.name});});
+  idleCleanup=Promise.all([idleCleanup,suspended]).then(()=>p.release()).catch(error=>{h.logEvent('native-idle-cleanup-error',{name:error.name});});
   return idleCleanup;
  };
+ window.harmonyNativeIdle=()=>idleCleanup;
  mediaState(false);
  const originalStart=h.start.bind(h), originalStop=h.stop.bind(h);
  const route = data => { window.harmonyNativeRoute=data; h.logEvent('native-route',data); };
