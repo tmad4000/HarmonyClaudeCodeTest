@@ -40,13 +40,10 @@ window.addEventListener('DOMContentLoaded', () => {
  let idleCleanup=Promise.resolve();
  const mediaState=active=>{
   const session=navigator.mediaSession;if(!session)return;
-  try{
-   session.metadata=active&&typeof MediaMetadata==='function'?new MediaMetadata({title:'Harmony',artist:'Ideaflow',artwork:[{src:new URL('harmony-app-icon.png',location.href).href,sizes:'1024x1024',type:'image/png'}]}):null;
-   session.playbackState=active?'playing':'none';
-   session.setActionHandler('play',active?()=>{if(!h.isRunning&&!starting)void h.start();}:null);
-   session.setActionHandler('pause',active?()=>h.stop():null);
-   session.setActionHandler('stop',active?()=>h.stop():null);
-  }catch(error){h.logEvent('native-media-session-error',{name:error.name});}
+  const safely=fn=>{try{fn();}catch(error){h.logEvent('native-media-session-error',{name:error.name});}};
+  safely(()=>{session.metadata=active&&typeof MediaMetadata==='function'?new MediaMetadata({title:'Harmony',artist:'Ideaflow',artwork:[{src:new URL('harmony-app-icon.png',location.href).href,sizes:'1024x1024',type:'image/png'}]}):null;});
+  safely(()=>{session.playbackState=active?'playing':'none';});
+  for(const [action,handler] of [['play',()=>{if(!h.isRunning&&!starting)void h.start();}],['pause',()=>h.stop()],['stop',()=>h.stop()]])safely(()=>session.setActionHandler(action,active?handler:null));
  };
  const clearMedia=()=>{
   mediaState(false);
@@ -56,7 +53,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const context=window.Tone?.getContext()?.rawContext;
   let suspended;
   try{suspended=context&&context.state!=='closed'&&context.state!=='suspended'?context.suspend():Promise.resolve();}catch(error){suspended=Promise.reject(error);}
-  idleCleanup=Promise.all([idleCleanup,suspended]).then(()=>p.release()).catch(error=>{h.logEvent('native-idle-cleanup-error',{name:error.name});});
+  idleCleanup=Promise.allSettled([idleCleanup,suspended]).then(results=>{for(const result of results)if(result.status==='rejected')h.logEvent('native-idle-cleanup-error',{name:result.reason?.name||'Error'});return p.release();}).catch(error=>{h.logEvent('native-release-error',{name:error.name});});
   return idleCleanup;
  };
  window.harmonyNativeIdle=()=>idleCleanup;
