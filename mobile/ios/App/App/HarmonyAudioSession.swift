@@ -201,17 +201,24 @@ extension HarmonyViewController: WKScriptMessageHandler {
       const paint=()=>{if(visible()){result.paintedFrames++;firstPaint??=performance.now();}if(!done)requestAnimationFrame(paint);};requestAnimationFrame(paint);
       window.fetch=async(input,options)=>{const url=typeof input==='string'?input:input.url;if(url.includes('globalbr.ai/api/ingest/harmony/v1')){result.requests.push({path:new URL(url).pathname,method:input instanceof Request?input.method:options?.method||'GET',at:performance.now(),noticeVisible:visible(),paintedFrames:result.paintedFrames});return new Response(JSON.stringify({error:'synthetic_smoke_no_network'}),{status:503,headers:{'Content-Type':'application/json'}});}return realFetch(input,options);};
       window.addEventListener('error',e=>result.errors.push(e.message));
-      const report=()=>{if(done)return;done=true;window.harmonySinger?.stop();result.firstPaint=firstPaint;result.defaultRecordingOn=window.harmonyDebug?.enabled===true;result.nativeRoute=window.harmonyNativeRoute;result.running=window.harmonySinger?.isRunning;result.lastError=String(window.harmonySinger?.lastError||'');result.micFailures=window.harmonySinger?.getLog().filter(e=>e.type==='mic-start-failed');result.pass=result.errors.length===0&&result.beforeSingRequests===0&&result.defaultRecordingOn&&result.requests.length>0&&(failureMode?result.micFailures?.some(e=>e.name==='NotAllowedError'&&e.capture?.constraints?.audio):result.beforeStop?.running===true&&result.beforeStop?.liveAudio===true&&result.beforeStop?.sourceAssigned===true&&result.beforeStop?.sourceContextMatches===true&&(!realMic||result.nativeRoute?.webViewCapture?.decision==='grant')&&!result.lastError&&result.micFailures?.length===0)&&result.requests.every(r=>r.paintedFrames>1&&firstPaint!==null&&r.at>firstPaint);window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
+      const report=()=>{if(done)return;done=true;const u=window.harmonyDebugUpload,d=window.harmonyDebug,h=window.harmonySinger;result.readiness={noticed:!!u?.noticed,accepting:!!u?.accepting,hidden:document.hidden,noticeOperation:u?.noticeOperation,recorderState:d?.recorder?.state||null,activeSession:!!d?.activeId,contextState:h?.audioContext?.state||null,captureFailure:d?.captureFailure||null};window.harmonySinger?.stop();result.firstPaint=firstPaint;result.defaultRecordingOn=window.harmonyDebug?.enabled===true;result.nativeRoute=window.harmonyNativeRoute;result.running=window.harmonySinger?.isRunning;result.lastError=String(window.harmonySinger?.lastError||'');result.micFailures=window.harmonySinger?.getLog().filter(e=>e.type==='mic-start-failed');result.pass=result.errors.length===0&&result.beforeSingRequests===0&&result.defaultRecordingOn&&result.requests.length>0&&(failureMode?result.micFailures?.some(e=>e.name==='NotAllowedError'&&e.capture?.constraints?.audio):result.beforeStop?.running===true&&result.beforeStop?.liveAudio===true&&result.beforeStop?.sourceAssigned===true&&result.beforeStop?.sourceContextMatches===true&&(!realMic||result.nativeRoute?.webViewCapture?.decision==='grant')&&!result.lastError&&result.micFailures?.length===0)&&result.requests.every(r=>r.paintedFrames>1&&firstPaint!==null&&r.at>firstPaint);window.webkit.messageHandlers.harmonySmoke.postMessage(result);};
       window.addEventListener('DOMContentLoaded',()=>{
         // Install before the native adapter's DOM listener wraps capture.
         if(!realMic)navigator.mediaDevices.getUserMedia=async()=>{if(failureMode)throw new DOMException('Synthetic permission failure','NotAllowedError');const c=Tone.getContext().rawContext,o=c.createOscillator(),g=c.createGain(),d=c.createMediaStreamDestination();o.frequency.value=220;g.gain.value=.015;o.connect(g).connect(d);o.start();return d.stream;};
         setTimeout(async()=>{try{
+        // The privacy paint gate is part of test readiness, not a wall-clock guess.
+        const readyDeadline=performance.now()+8000;
+        while(!(window.harmonyDebugUpload?.noticed&&result.paintedFrames>1&&visible())){
+          if(performance.now()>=readyDeadline)throw new Error('QA privacy notice readiness timeout');
+          await new Promise(resolve=>setTimeout(resolve,50));
+        }
+        result.noticeReadyAt=performance.now();
         result.beforeSingRequests=result.requests.length;
         document.getElementById('startBtn').click();
         setTimeout(()=>{const h=window.harmonySinger;result.beforeStop={running:h?.isRunning,liveAudio:h?.mediaStream?.getAudioTracks().some(t=>t.readyState==='live')===true,sourceAssigned:typeof h?.micSource?.connect==='function',sourceContextMatches:h?.micSource?.context===h?.audioContext};h?.stop();},5000);
         setTimeout(report,10000);
       }catch(e){result.errors.push(String(e));report();}},1500);});
-      setTimeout(report,20000);
+      setTimeout(()=>{result.errors.push('QA smoke deadline');report();},30000);
     })();
     """#
 }
