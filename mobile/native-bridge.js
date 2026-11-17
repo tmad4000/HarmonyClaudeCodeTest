@@ -94,7 +94,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   finally { starting=false;if(!h.isRunning)await clearMedia(); }
  };
- h.stop=function(...args){if(!args[0])generation++;const result=originalStop(...args);if(!args[0])void clearMedia();return result;};
+ h.stop=function(...args){if(!args[0])generation++;try{return originalStop(...args);}finally{if(!args[0])void clearMedia();}};
  const routeIdentity=data=>JSON.stringify({sampleRate:data?.sampleRate,inputs:(data?.inputs||[]).map(x=>({type:x.type,name:x.name})),outputs:(data?.outputs||[]).map(x=>({type:x.type,name:x.name}))});
  p.addListener('routeChanged',data=>{if(starting){applyRoute(data);h.logEvent('native-startup-route',data);return;}if(routeIdentity(data)===routeIdentity(window.harmonyNativeRoute)){route(data);h.logEvent('native-route-unchanged',{reason:data.reason});return;}h.stop();applyRoute(data);h.logEvent('native-stopped',{reason:'route-change'});});
  p.addListener('sessionChanged',route);
