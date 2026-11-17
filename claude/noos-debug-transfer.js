@@ -271,7 +271,7 @@
    if(stale())return;
    if(task&&!deleting){const claim=await this.store.authorize(task.id,this.owner,false).catch(()=>null);if(!claim||claim.blocked||stale())return;}
    if(e.name!=='AbortError'){this.recordFailure(e,task);await this.queueFailure(task,e).catch(()=>{});if(stale())return;}
-   if(task&&['audio','events'].includes(task.type)&&e.uploadStage==='blob-read'&&e.name==='NotFoundError'){const lost=await this.store.losePayload(task).catch(()=>{this.failStorage();return false;});if(stale())return;if(lost){this.state='error';this.status(this.failureReason);this.schedule(0);}return;}
+   if(task&&['audio','events'].includes(task.type)&&e.uploadStage==='blob-read'&&e.name==='NotFoundError'){const lost=await this.store.losePayload(task).catch(()=>{this.failStorage();return false;});if(stale())return;if(lost){this.localLossNote='An older recording part could not be recovered. New recordings can still send.';this.failureReason=this.captureError||this.permanentError||null;this.state=this.captureError||this.permanentError?'error':navigator.onLine?'idle':'offline';this.status(this.captureError||this.permanentError||this.localLossNote);this.schedule(0);}return;}
    this.limitError=[413,429,507].includes(e.status);this.state=this.accepting?'error':'off';
    if(task&&[400,401,403,404,409,410,413,415,422,507].includes(e.status)){
     await this.store.permanent(task,'HTTP '+e.status).catch(()=>this.failStorage());if(stale())return;
