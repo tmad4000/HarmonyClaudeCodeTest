@@ -20,7 +20,7 @@ from altool_output import require_altool_success
 
 TEAM='JESMXK96LG'
 DIST='300FAAFC4D696C4B886638DECE3E1319C3D0082E'
-AGENT='6117da33-6c7e-4ebe-8710-a81f2dec98af'
+AGENT='a2ff6ce3-4151-447a-b664-27cf52146cad'
 
 def manual_archive_settings(profile_uuid,build):
     # Resolve the profile only in the application target. A command-line

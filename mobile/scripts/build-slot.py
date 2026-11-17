@@ -10,7 +10,7 @@ except FileExistsError:
     except OSError: pass
     sys.exit(75)
 lease=str(uuid.uuid4())
-owner={'agentId':os.environ.get('OPEN_RECORDINGS_AGENT_ID',os.environ.get('EARMARK_AGENT_ID','6117da33-6c7e-4ebe-8710-a81f2dec98af')),'project':'harmony','leaseId':lease,'pid':os.getpid(),'processStart':subprocess.check_output(['ps','-o','lstart=','-p',str(os.getpid())],text=True).strip(),'acquiredAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
+owner={'agentId':os.environ.get('OPEN_RECORDINGS_AGENT_ID',os.environ.get('EARMARK_AGENT_ID','a2ff6ce3-4151-447a-b664-27cf52146cad')),'project':'harmony','leaseId':lease,'pid':os.getpid(),'processStart':subprocess.check_output(['ps','-o','lstart=','-p',str(os.getpid())],text=True).strip(),'acquiredAt':datetime.datetime.now(datetime.timezone.utc).isoformat()}
 (lock/'owner.json').write_text(json.dumps(owner))
 child = None
 pending_signal = None
