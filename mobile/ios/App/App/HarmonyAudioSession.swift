@@ -88,7 +88,7 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in self?.interrupt("media-services-reset") })
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
-    private func configure(activate: Bool) throws {
+    private func configure() throws {
         let session = AVAudioSession.sharedInstance()
         // A2DP OUTPUT only; no allowBluetooth/HFP microphone and no mixWithOthers.
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothA2DP])
@@ -97,19 +97,14 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
         if let mic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
             try session.setPreferredInput(mic)
         }
-        // WebKit acquires capture first; activating here during prepare can
-        // interrupt that handoff. Reapply/activate only after the graph is ready.
-        if activate {
-            try session.setActive(true)
-            active = true
-            UIApplication.shared.isIdleTimerDisabled = true
-        }
+        // WebKit owns activation after getUserMedia. Never reconfigure or
+        // deactivate its live capture session from the native bridge.
     }
     private func deactivate() {
         active = false
         UIApplication.shared.isIdleTimerDisabled = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+
     private func interrupt(_ reason: String) {
         // Ask WebKit to stop synchronously as well as notifying JS listeners.
         webView?.evaluateJavaScript("window.harmonySinger?.stop();", completionHandler: nil)
@@ -129,7 +124,11 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
         else if outputs.contains(where: { [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE].contains($0.portType) }) { type = "bluetooth" }
         else if outputs.contains(where: { $0.portType == .usbAudio }) { type = "usb" }
         else { type = "wired" }
-        return ["outputType": type, "outputs": outputs.map { ["type": $0.portType.rawValue, "name": $0.portName] },
+        let nativeBuild: JSObject = ["platform": "ios", "bundleId": Bundle.main.bundleIdentifier ?? "",
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+            "sessionOwner": "webkit"]
+        return ["nativeBuild": nativeBuild, "outputType": type, "outputs": outputs.map { ["type": $0.portType.rawValue, "name": $0.portName] },
                 "inputs": s.currentRoute.inputs.map { ["type": $0.portType.rawValue, "name": $0.portName] },
                 "sampleRate": s.sampleRate, "bufferDuration": s.ioBufferDuration,
                 "inputLatency": s.inputLatency, "outputLatency": s.outputLatency,
@@ -140,9 +139,9 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
                 "captureAuthorization": AVCaptureDevice.authorizationStatus(for: .audio).rawValue,
                 "webViewCapture": HarmonyCaptureDelegate.decision]
     }
-    private func configureCall(_ call: CAPPluginCall, activate: Bool = true) {
+    private func configureCall(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            do { try self.configure(activate: activate); call.resolve(self.route()) }
+            do { try self.configure(); call.resolve(self.route()) }
             catch { self.deactivate(); call.reject("Audio session could not start: \(error.localizedDescription)") }
         }
     }
@@ -156,14 +155,20 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
             } else if session.recordPermission == .undetermined {
                 session.requestRecordPermission { granted in
                     DispatchQueue.main.async {
-                        if granted { self.configureCall(call, activate: false) }
+                        if granted { self.configureCall(call) }
                         else { call.reject("Microphone permission denied: enable in Settings → Harmony", "MIC_PERMISSION_DENIED") }
                     }
                 }
-            } else { self.configureCall(call, activate: false) }
+            } else { self.configureCall(call) }
         }
     }
-    @objc func activate(_ call: CAPPluginCall) { configureCall(call) }
+    @objc func activate(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.active = true
+            UIApplication.shared.isIdleTimerDisabled = true
+            call.resolve(self.route())
+        }
+    }
     @objc func release(_ call: CAPPluginCall) { DispatchQueue.main.async { self.deactivate(); call.resolve() } }
     @objc func getRoute(_ call: CAPPluginCall) { DispatchQueue.main.async { call.resolve(self.route()) } }
     @objc func openNeural(_ call: CAPPluginCall) { openPage("https://harmony.jacobcole.net/neural-experiment.html", call) }

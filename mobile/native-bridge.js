@@ -39,6 +39,8 @@ window.addEventListener('DOMContentLoaded', () => {
  document.addEventListener('click',event=>{const a=event.target.closest?.('a');if(!a)return;const page=a.getAttribute('href');if(page==='neural-experiment.html'||page==='privacy.html'){event.preventDefault();(page==='privacy.html'?p.openPrivacy():p.openNeural()).catch(()=>{});}},true);
  const originalStart=h.start.bind(h), originalStop=h.stop.bind(h);
  const route = data => { window.harmonyNativeRoute=data; h.logEvent('native-route',data); };
+ const originalMetadata=window.harmonySessionMetadata;
+ window.harmonySessionMetadata=()=>({...originalMetadata?.(),native:window.harmonyNativeRoute?.nativeBuild||{platform:'ios',sessionOwner:'webkit'},nativeRoute:window.harmonyNativeRoute||null});
  const applyRoute = data => {
   route(data);
   h.setSpeakerMode(data.outputType==='speaker');
@@ -52,7 +54,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Resume Web Audio inside the original tap, before any native promise yields.
   try {
    const audioReady=Promise.resolve(window.Tone?.start()).then(()=>null,error=>error);
-   const data=await p.prepare();attemptContext.nativeAfterPrepare=data;attemptContext.contextAfterPrepare=contextState();
+   const data=await p.prepare();route(data);attemptContext.nativeAfterPrepare=data;attemptContext.contextAfterPrepare=contextState();
    if(own!==generation){await p.release();return;}
    const audioError=await audioReady;
    if(own!==generation){await p.release();return;}

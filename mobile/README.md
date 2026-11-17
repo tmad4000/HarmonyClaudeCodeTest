@@ -1,6 +1,6 @@
 # Harmony iOS beta
 
-Capacitor 7.4.3 wraps the same `../claude` web app. `scripts/bundle-web.py` packages it without changing engine bytes. The native adapter prepares and reapplies AVAudioSession around WebKit capture, reports routes and stops on route changes/background/interruption. Stops never resume automatically. Bluetooth uses A2DP output and built-in microphone; no HFP or mixing. Actual routing/latency/audibility remain physical-iPhone tests.
+Capacitor 7.4.3 wraps the same `../claude` web app. `scripts/bundle-web.py` packages it without changing engine bytes. The native adapter prepares AVAudioSession before WebKit capture; WebKit owns activation and deactivation, reports routes and stops on route changes/background/interruption. Stops never resume automatically. Bluetooth uses A2DP output and built-in microphone; no HFP or mixing. Actual routing/latency/audibility remain physical-iPhone tests.
 
 `npm ci && npm run sync` produces the offline core app. Piano backing samples still require network (existing web behavior). Neural experiment and feedback open in Safari. No OTA code updates. Beta audio/diagnostics upload follows the same visible Recording control and privacy disclosure as the web; turning Recording off stops sending. No claim of “no data collected.”
 
