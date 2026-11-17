@@ -691,7 +691,7 @@
             if (explicitEvidence && s.nearSeeded !== true && !s.independentNear) nearOk = false;
             // Learned power cannot reopen a closed gate using an expired singer seed.
             // Continuing a live phrase retains its existing conservative power policy.
-            if (explicitEvidence && !this.gateOpen && s.nearLeaseFresh === false && !s.independentNear) nearOk = false;
+            if (explicitEvidence && !(now-this.lastNearAt<this.holdMs) && s.nearLeaseFresh === false && !s.independentNear) nearOk = false;
             this.trim = Math.min(1, Math.max(this.minTrim, this.trim));
             if (!st) { this.trim = 1; this.bound = 1; }
             let applied = Math.max(this.minTrim, Math.min(this.trim, this.bound));

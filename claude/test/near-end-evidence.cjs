@@ -171,3 +171,7 @@ const expiredStats={micPow:.001,outPow:.001,echoPow:1e-8,refPow:.0001,adapted:tr
 let expired=expiredRoom.update({now:10000,voiced:true,independentNear:false,nearSeeded:true,nearLeaseFresh:false,playedAmbiguous:false,stats:expiredStats});
 assert.equal(expired.powerNearOk,true);assert.equal(expired.nearOk,false);assert.equal(expired.gateOpen,false,'expired near seed cannot bootstrap delayed echo');
 expired=expiredRoom.update({now:10033,voiced:true,independentNear:true,nearSeeded:true,nearLeaseFresh:true,playedAmbiguous:false,stats:expiredStats});assert.equal(expired.gateOpen,true,'fresh independent singer evidence can reopen');
+
+const delayedRoom=new SpeakerLoopControl({mode:'speakers',holdMs:450});delayedRoom.setCoupling(.001);
+assert(delayedRoom.update({now:0,voiced:true,independentNear:true,nearSeeded:true,nearLeaseFresh:true,playedAmbiguous:false,stats:expiredStats}).gateOpen);
+const delayedDecision=delayedRoom.update({now:10000,voiced:true,independentNear:false,nearSeeded:true,nearLeaseFresh:false,playedAmbiguous:false,stats:expiredStats});assert.equal(delayedDecision.nearOk,false);assert.equal(delayedDecision.gateOpen,false,'timer gap cannot revive an expired gate using learned echo power');
