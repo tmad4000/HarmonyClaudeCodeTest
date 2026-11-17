@@ -306,6 +306,11 @@ class HarmonySinger {
         this.reverb = null;
         this.chorus = null;
         this.masterGain = null;
+        this.levelGain = null;
+        this.outputLevelControl = new window.HarmonyOutputLevelControl();
+        this.outputLevelBuffer = null;
+        this.outputRenderClock = null;
+        this.aecStatsAt = null;
         this.limiter = null;
         this.dryGain = null;
 
@@ -1441,6 +1446,8 @@ class HarmonySinger {
             this.reverb = new Tone.Reverb({ decay: 2.5, preDelay: 0.01, wet: this.reverbAmount });
             await this.reverb.ready; // Constructor already generates the impulse response.
             checkCurrent();
+            this.levelGain = new Tone.Gain(1);
+            this.outputLevelControl.reset();
             this.masterGain = new Tone.Gain(1);
             this.limiter = new Tone.Limiter(-3);
             this.dryGain = new Tone.Gain(this.speakerMode ? 0 : this.dryVolume);
@@ -1467,7 +1474,8 @@ class HarmonySinger {
             this.trimGain.connect(this.lpFilter);
             this.lpFilter.connect(this.chorus);
             this.chorus.connect(this.reverb);
-            this.reverb.connect(this.masterGain);
+            this.reverb.connect(this.levelGain);
+            this.levelGain.connect(this.masterGain);
             if (this.speakerMode) {
                 // One speaker signal: both laptop speakers play the same thing, so the room is a single
                 // echo path the canceller can model (stereo chorus/reverb would be two paths, one reference).
@@ -1554,7 +1562,7 @@ class HarmonySinger {
     }
 
     onAecMessage(m) {
-        if (m.type === 'stats') { this.aecStats = m; return; }
+        if (m.type === 'stats') { this.aecStats = m; this.aecStatsAt=performance.now(); return; }
         const done = m.id && this.aecPending[m.id];
         if (done) { delete this.aecPending[m.id]; done(m); }
     }
@@ -1941,10 +1949,10 @@ class HarmonySinger {
         this.currentChord = null;
         this.voicePresent = false;
         if (this.instTap) { try { this.instTap.disconnect(); } catch (e) { /* ignore */ } this.instTap = null; }
-        [this.mic, this.gateGain, this.trimGain, this.lpFilter, this.chorus, this.reverb, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
+        [this.mic, this.gateGain, this.trimGain, this.lpFilter, this.chorus, this.reverb, this.levelGain, this.masterGain, this.limiter, this.dryGain, this.analyser, this.instGain]
             .forEach(n => { if (n) { try { n.dispose(); } catch (e) { /* ignore */ } } });
         this.mic = null; this.gateGain = null; this.trimGain = null; this.lpFilter = null; this.chorus = null; this.reverb = null;
-        this.masterGain = null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
+        this.masterGain = null; this.levelGain = null; this.outputLevelControl.reset(); this.outputLevelBuffer=null; this.outputRenderClock=null; this.aecStatsAt=null; this.limiter = null; this.dryGain = null; this.analyser = null; this.instGain = null;
         this.smoothedPitch = null;
         this.playedPitchTail = [];
         this.stableMidi = null;
@@ -1983,7 +1991,7 @@ class HarmonySinger {
             // original classifier/controller contract, including initial shifts.
             const independentPolicy = this.usesIndependentNearEvidence();
             const decision=this.quietVoiceGate.update({now,rms,pitch,speaker:this.speakerMode,pureTone:this.pureTone,harmonic:this.harmonicVoice,stats:this.aecStats,coupling:this.loopControl?.coupling||1,couplingKnown:!!this.loopControl?.couplingKnown,confirmedHowl:this.notches.some(n=>n.active),independentPolicy,playedPitchesHz:independentPolicy?this.playedPitchesHz():[],referenceActive:this.aecStats?null:!!this.gateOpen});this.voiceDecision=decision;voiced=decision.voiced;const voiceLike=voiced&&(!this.pureTone||this.harmonicVoice||decision.allowTonal);
-            if (this.isIOS && this.mic) {
+            if (this.mic && (this.isIOS || (this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&this.usesIndependentNearEvidence()))) {
                 const rawLevel=this.aecStats?.outPow>0?Math.sqrt(this.aecStats.outPow):rms/Math.max(1,this.inputMakeup);
                 // Only the independently guarded third/voice path gets extra quiet-input makeup.
                 // Other modes retain their previous 4x ceiling; the final limiter/reference stay intact.
@@ -2085,11 +2093,30 @@ class HarmonySinger {
                 if (this.duckUntil && now > this.duckUntil) { this.duckUntil = 0; this.updateGains(); }
             }
 
+            if(this.levelGain&&this.outTap){
+                if(!this.outputLevelBuffer||this.outputLevelBuffer.length!==this.outTap.fftSize)this.outputLevelBuffer=new Float32Array(this.outTap.fftSize);
+                this.outTap.getFloatTimeDomainData(this.outputLevelBuffer);
+                let outputPower=0,outputPeak=0;
+                for(const sample of this.outputLevelBuffer){outputPower+=sample*sample;outputPeak=Math.max(outputPeak,Math.abs(sample));}
+                const audioTime=this.audioContext.currentTime;
+                const clock=this.outputRenderClock||(this.outputRenderClock={audioTime,advancedAt:now});
+                if(audioTime>clock.audioTime){clock.audioTime=audioTime;clock.advancedAt=now;}
+                const measurementFresh=this.audioContext.state==='running'&&now-clock.advancedAt<200
+                    &&Number.isFinite(this.aecStatsAt)&&now-this.aecStatsAt<500;
+                const activeVoices=Object.values(this.gains).some(g=>g.gain.value>0)||this.instGain?.gain.value>0;
+                const feedback=!!(loop?.emergencyActive||loop?.hotEmergency)||now<this.duckUntil;
+                const level=this.outputLevelControl.update({now,rms:Math.sqrt(outputPower/this.outputLevelBuffer.length),peak:outputPeak,
+                    voiceActive:normalVoiced&&this.gateOpen&&activeVoices,measurementFresh,
+                    enabled:this.speakerMode&&this.speakerApproved&&this.usingCanceller()&&!this.calibrating,
+                    feedback,volume:this.harmonyVolume});
+                this.levelGain.gain.rampTo(level.gain,.02);
+            }
+
             // Periodic stats for the debug log (2 Hz).
             if (now - this.lastStatLog > 500) {
                 this.lastStatLog = now;
                 this.logEvent('stats', {
-                    voiceDecision:decision,inputMakeupGain:this.inputMakeup||1,rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
+                    outputLevel:this.outputLevelControl.snapshot,voiceDecision:decision,inputMakeupGain:this.inputMakeup||1,rms: +rms.toFixed(4), pitch: pitch ? +pitch.toFixed(1) : null, voiced, harmonicVoice: this.harmonicVoice, pureTone: this.pureTone,
                     gate: this.gateOpen, notches: this.notches.filter(n => n.active).map(n => Math.round(n.hz)),
                     peaks: this.lastPeaks.slice(0, 3).map(p => [Math.round(p.hz), Math.round(p.db)]),
                     ...(loop && this.aecStats ? { aec: {

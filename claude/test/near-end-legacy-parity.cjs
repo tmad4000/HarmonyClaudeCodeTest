@@ -16,8 +16,15 @@ for(const mode of ['speakers','protected']){
   const old=oldVoice.update(input),current=voice.update({...input,independentPolicy:false,playedPitchesHz:[177,221]});
   assert.deepEqual(json(current),json(old),'legacy classifier '+mode+' frame '+i);
   const state={now,voiced:old.voiced&&(!input.pureTone||input.harmonic||old.allowTonal),stats:st},a=oldLoop.update(state),b=loop.update(state);
-  for(const key of Object.keys(a))assert.equal(b[key],a[key],'legacy controller '+key+' '+mode+' frame '+i);
-  for(const key of ['coupling','couplingKnown','appGain','bound','trim','applied','lastNearAt'])assert.equal(loop[key],oldLoop[key],'legacy state '+key+' '+mode+' frame '+i);
+  for(const key of Object.keys(a)){
+   if(mode==='speakers'&&['trim','emergencyActive'].includes(key))continue; // Root-approved removal of unknown-prior attenuation only.
+   assert.equal(b[key],a[key],'legacy controller '+key+' '+mode+' frame '+i);
+  }
+  if(mode==='speakers'){
+   assert(b.trim>=a.trim&&b.trim<=1,'removing prior cuts must not add attenuation');
+   if(!loop.couplingKnown){assert.equal(b.trim,1);assert.equal(b.emergencyActive,false);}
+  }
+  for(const key of ['coupling','couplingKnown','appGain','bound','trim','applied','lastNearAt']){if(mode==='speakers'&&key==='applied')continue;assert.equal(loop[key],oldLoop[key],'legacy state '+key+' '+mode+' frame '+i);}
  }
 }
 const sandbox={window:{addEventListener(){}},navigator:{},console};vm.createContext(sandbox);vm.runInContext(fs.readFileSync(path.join(root,'harmony-app.js'),'utf8')+'\nglobalThis.TestSinger=HarmonySinger;',sandbox);
@@ -26,4 +33,4 @@ for(const mode of ['thirds','unison','octaves','fifths','sixths','power','choir'
  Object.assign(h,{currentMode:mode,backing,harmonyPosition:position,voiceShifts:{lower:0,upper:0}});
  assert.equal(h.usesIndependentNearEvidence(),mode==='thirds'&&backing==='voice');
 }
-console.log(JSON.stringify({passed:true,baseline:base,legacyClassifierAndControllerParityFrames:3600,includesFirstLearningSuspectCalibrationReset:true,scope:'thirds + voice only; above/below/both; independent of initial zero shifts'}));
+console.log(JSON.stringify({passed:true,baseline:base,legacyClassifierParityFrames:3600,protectedControllerParity:true,unknownSpeakerPriorCutRemoved:true,includesFirstLearningSuspectCalibrationReset:true,scope:'thirds + voice only; above/below/both; independent of initial zero shifts'}));

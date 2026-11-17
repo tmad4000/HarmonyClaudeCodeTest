@@ -696,7 +696,7 @@
                 const leak=st&&st.adapted&&!st.suspect?Math.max(st.leak,this.leakFloor):1;
                 // Unknown digital-to-acoustic gain is not a measured emergency.
                 // Keep the absolute hot-output safeguard even before calibration.
-                const loopPower=st&&(this.couplingKnown||!explicitEvidence)?leak*this.coupling*this.appGain:0;
+                const loopPower=st&&this.couplingKnown?leak*this.coupling*this.appGain:0;
                 if(loopPower>0.5)this.emergencyActive=true;
                 else if(loopPower<0.25)this.emergencyActive=false;
                 const target=this.emergencyActive?Math.max(0.5,Math.min(1,Math.sqrt(0.5/Math.max(loopPower,1e-12)))):1;

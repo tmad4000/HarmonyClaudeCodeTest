@@ -34,7 +34,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   voiceGains:Object.fromEntries(Object.entries(h.gains||{}).map(([name,node])=>[name,node.gain.value])),
   activeHarmonyVoices:Object.values(h.gains||{}).filter(node=>node.gain.value>0).length,
   gateGain:h.gateGain?.gain?.value??null,trimGain:h.trimGain?.gain?.value??null,
-  masterGain:h.masterGain?.gain?.value??null,instrumentGain:h.instGain?.gain?.value??null,
+  masterGain:h.masterGain?.gain?.value??null,normalizationGain:h.levelGain?.gain?.value??null,outputLevel:h.outputLevelControl?.snapshot||null,instrumentGain:h.instGain?.gain?.value??null,
   harmonyVolume:h.harmonyVolume??null,speakerTrim:h.speakerTrim??null,
   protectionMode:h.loopControl?.mode??null,extraProtection:!!h.extraProtection,
   continuous:!!h.debugContinuous,selectedMode:h.speakerMode?'speakers':'headphones',speakerApproved:!!h.speakerApproved,detectedOutput:h.detectedOutput||'unknown',outputConsentPending:!!h.outputConsentPending,destinationMuted:!!Tone.getDestination().mute,

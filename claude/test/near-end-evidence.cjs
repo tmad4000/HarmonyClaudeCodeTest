@@ -48,13 +48,13 @@ function path() {
     assert.equal(d.decision.powerNearAfterSeed,false);assert.equal(d.control.nearOk,false);assert.equal(d.control.gateOpen,false);
 }
 
-// A cached older app omitting the evidence fields retains its original numeric
-// policy and conservative prior-based level bound; false is an explicit new API.
+// Omitting near evidence still retains legacy gate policy. An unknown coupling
+// prior must not create a speaker-level cut for either caller contract.
 {
     const legacy=path().loop, explicit=path().loop;
     const old=legacy.update({now:0,voiced:true,stats:stats(.001)});
     const modern=explicit.update({now:0,voiced:true,stats:stats(.001),independentNear:false,nearSeeded:false});
-    assert.ok(old.trim<1);assert.equal(old.nearOk,false);assert.equal(modern.trim,1);assert.equal(modern.nearOk,false);
+    assert.equal(old.trim,1);assert.equal(old.nearOk,false);assert.equal(modern.trim,1);assert.equal(modern.nearOk,false);
 }
 
 // Digital output can be much louder than acoustic near voice. Unknown room gain
