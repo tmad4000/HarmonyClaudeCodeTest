@@ -15,6 +15,7 @@ index=index.replace('<script src="update-guard.js"></script>', '')
 (out/'sw.js').unlink(missing_ok=True)
 (out/'neural-experiment.html').unlink(missing_ok=True)
 shutil.copyfile(root/'native-bridge.js',out/'native-bridge.js')
+shutil.copyfile(root/'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png',out/'harmony-app-icon.png')
 # Native feedback opens a website in Safari, never downloads executable code.
 (out/'harmony-wit-feedback.js').write_text("window.addEventListener('harmony-ui-ready',()=>{const m=document.querySelector('#harmony-feedback-mount');if(m){const b=document.createElement('button');b.textContent='Suggestion box';b.onclick=()=>window.Capacitor.Plugins.HarmonyAudioSession.openFeedback();m.replaceChildren(b);}}, {once:true});")
 manifest={str(p.relative_to(out)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(out.rglob('*')) if p.is_file()}

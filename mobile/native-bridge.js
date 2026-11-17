@@ -37,6 +37,29 @@ window.addEventListener('DOMContentLoaded', () => {
   try{await d.write(row);}finally{if(d.activeId===id)d.activeId=null;}
  };
  document.addEventListener('click',event=>{const a=event.target.closest?.('a');if(!a)return;const page=a.getAttribute('href');if(page==='neural-experiment.html'||page==='privacy.html'){event.preventDefault();(page==='privacy.html'?p.openPrivacy():p.openNeural()).catch(()=>{});}},true);
+ let idleCleanup=Promise.resolve();
+ const mediaState=active=>{
+  const session=navigator.mediaSession;if(!session)return;
+  try{
+   session.metadata=active&&typeof MediaMetadata==='function'?new MediaMetadata({title:'Harmony',artist:'Ideaflow',artwork:[{src:new URL('harmony-app-icon.png',location.href).href,sizes:'1024x1024',type:'image/png'}]}):null;
+   session.playbackState=active?'playing':'none';
+   session.setActionHandler('play',active?()=>{if(!h.isRunning&&!starting)void h.start();}:null);
+   session.setActionHandler('pause',active?()=>h.stop():null);
+   session.setActionHandler('stop',active?()=>h.stop():null);
+  }catch(error){h.logEvent('native-media-session-error',{name:error.name});}
+ };
+ const clearMedia=()=>{
+  mediaState(false);
+  for(const element of document.querySelectorAll('audio,video')){
+   try{element.pause();element.srcObject?.getTracks?.().forEach(track=>track.stop());element.srcObject=null;element.removeAttribute('src');element.load();}catch(error){h.logEvent('native-media-cleanup-error',{name:error.name});}
+  }
+  const context=window.Tone?.getContext()?.rawContext;
+  let suspended;
+  try{suspended=context&&context.state!=='closed'&&context.state!=='suspended'?context.suspend():Promise.resolve();}catch(error){suspended=Promise.reject(error);}
+  idleCleanup=Promise.resolve(suspended).then(()=>p.release()).catch(error=>{h.logEvent('native-idle-cleanup-error',{name:error.name});});
+  return idleCleanup;
+ };
+ mediaState(false);
  const originalStart=h.start.bind(h), originalStop=h.stop.bind(h);
  const route = data => { window.harmonyNativeRoute=data; h.logEvent('native-route',data); };
  const originalMetadata=window.harmonySessionMetadata;
@@ -54,6 +77,8 @@ window.addEventListener('DOMContentLoaded', () => {
   // Resume Web Audio inside the original tap, before any native promise yields.
   try {
    const audioReady=Promise.resolve(window.Tone?.start()).then(()=>null,error=>error);
+   await idleCleanup;
+   if(own!==generation)return;
    const data=await p.prepare();route(data);attemptContext.nativeAfterPrepare=data;attemptContext.contextAfterPrepare=contextState();
    if(own!==generation){await p.release();return;}
    const audioError=await audioReady;
@@ -63,18 +88,19 @@ window.addEventListener('DOMContentLoaded', () => {
    // The engine reports failures in lastError rather than rejecting its promise.
    if(h.lastError){await reportFailure(h.lastError);await p.release();return;}
    if(own!==generation){originalStop();if(attemptContext?.interruption)await reportFailure(Object.assign(new Error('Audio was interrupted while the microphone was starting; tap Sing again.'),{name:'AbortError'}));await p.release();return;}
-   if(h.isRunning){const activeRoute=await p.activate();if(own!==generation){originalStop();await p.release();return;}route(activeRoute);}else {await reportFailure(new Error('Microphone startup stopped before capture became active'));await p.release();}
+   if(h.isRunning){const activeRoute=await p.activate();if(own!==generation){originalStop();await p.release();return;}route(activeRoute);mediaState(true);}else {await reportFailure(new Error('Microphone startup stopped before capture became active'));await p.release();}
   } catch(error){
    originalStop();h.lastError=error;
    await reportFailure(error).catch(e=>h.logEvent('diagnostic-error',{message:String(e.message||e)}));
    await p.release().catch(()=>{});
   }
-  finally { starting=false; }
+  finally { starting=false;if(!h.isRunning)await clearMedia(); }
  };
- h.stop=function(...args){if(!args[0])generation++;const result=originalStop(...args);if(!args[0])p.release().catch(()=>{});return result;};
+ h.stop=function(...args){if(!args[0])generation++;const result=originalStop(...args);if(!args[0])void clearMedia();return result;};
  const routeIdentity=data=>JSON.stringify({sampleRate:data?.sampleRate,inputs:(data?.inputs||[]).map(x=>({type:x.type,name:x.name})),outputs:(data?.outputs||[]).map(x=>({type:x.type,name:x.name}))});
  p.addListener('routeChanged',data=>{if(starting){applyRoute(data);h.logEvent('native-startup-route',data);return;}if(routeIdentity(data)===routeIdentity(window.harmonyNativeRoute)){route(data);h.logEvent('native-route-unchanged',{reason:data.reason});return;}h.stop();applyRoute(data);h.logEvent('native-stopped',{reason:'route-change'});});
  p.addListener('sessionChanged',route);
  p.addListener('interrupted',data=>{if(starting&&attemptContext)attemptContext.interruption=data;h.stop();h.logEvent('native-stopped',data);});
  p.getRoute().then(route).catch(()=>{});
+ void clearMedia();
 });
