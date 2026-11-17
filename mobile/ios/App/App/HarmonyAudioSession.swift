@@ -132,6 +132,7 @@ public class HarmonyAudioSession: CAPPlugin, CAPBridgedPlugin {
                 "inputs": s.currentRoute.inputs.map { ["type": $0.portType.rawValue, "name": $0.portName] },
                 "sampleRate": s.sampleRate, "bufferDuration": s.ioBufferDuration,
                 "inputLatency": s.inputLatency, "outputLatency": s.outputLatency,
+                "outputVolume": s.outputVolume, "outputVolumeSource": "AVAudioSession.outputVolume",
                 "category": s.category.rawValue, "mode": s.mode.rawValue,
                 "categoryOptions": Int(s.categoryOptions.rawValue), "active": active,
                 "isInputAvailable": s.isInputAvailable, "applicationRecordPermission": applicationPermission,

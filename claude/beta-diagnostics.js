@@ -28,6 +28,18 @@ window.addEventListener('DOMContentLoaded',()=>{
  const audioSessionInfo=()=>{try{return navigator.audioSession?{supported:true,type:navigator.audioSession.type??null,state:navigator.audioSession.state??null}:{supported:false};}catch(e){return{supported:true,readable:false,error:e.name};}};
  const captureState=()=>{const support={};for(const mime of ['audio/webm;codecs=opus','audio/mp4']){try{support[mime]=typeof MediaRecorder!=='undefined'&&typeof MediaRecorder.isTypeSupported==='function'?MediaRecorder.isTypeSupported(mime):null;}catch(_){support[mime]=null;}}return{enabled:!!d.enabled,starting:!!d.starting,sessionActive:!!d.activeId,recorderState:d.recorder?.state||'none',mimeType:d.recorder?.mimeType||null,audioLimited:!!d.audioLimited,skipped:!!d.skip,mediaRecorderAvailable:typeof MediaRecorder==='function',mimeSupport:support,failure:d.captureFailure?{...d.captureFailure}:null};};
  let lastActiveAudioCheck=null;
+ const gainChainSnapshot=()=>({
+  inputMakeup:h.mic?.gain?.value??h.inputMakeup??null,
+  dryGain:h.dryGain?.gain?.value??null,
+  voiceGains:Object.fromEntries(Object.entries(h.gains||{}).map(([name,node])=>[name,node.gain.value])),
+  activeHarmonyVoices:Object.values(h.gains||{}).filter(node=>node.gain.value>0).length,
+  gateGain:h.gateGain?.gain?.value??null,trimGain:h.trimGain?.gain?.value??null,
+  masterGain:h.masterGain?.gain?.value??null,instrumentGain:h.instGain?.gain?.value??null,
+  harmonyVolume:h.harmonyVolume??null,speakerTrim:h.speakerTrim??null,
+  protectionMode:h.loopControl?.mode??null,extraProtection:!!h.extraProtection,
+  continuous:!!h.debugContinuous,destinationMuted:!!Tone.getDestination().mute,
+  destinationDb:Tone.getDestination().volume.value,
+ });
  const audioCheckSnapshot=()=>{
   const levels=h.debugAudioLevels?.()||{},ctx=h.audioContext,track=h.mediaStream?.getAudioTracks()[0];let actual={};try{actual=track?.getSettings()||{};}catch(_){}
   const trackSettings=Object.fromEntries(['echoCancellation','noiseSuppression','autoGainControl','sampleRate','channelCount','latency'].filter(k=>actual[k]!==undefined).map(k=>[k,actual[k]]));
@@ -52,7 +64,26 @@ window.addEventListener('DOMContentLoaded',()=>{
    node=Tone.getContext().createAudioWorkletNode('harmony-raw-debug-tap',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]});sink=ctx.createGain();sink.gain.value=0;source.connect(node);node.connect(sink);sink.connect(ctx.destination);node.port.onmessage=e=>{latest=e.data;lastRawReceivedAt=performance.now();};
   }catch(e){if(id!==generation||!h.isRunning||!d.enabled)return;log('raw-tap-fallback',{message:e.message});const a=ctx.createAnalyser();a.fftSize=2048;source.connect(a);const buf=new Float32Array(2048);listeners.push(()=>{try{source.disconnect(a);a.disconnect();}catch(_){}});latest={sampledFallback:true};latest.read=()=>{a.getFloatTimeDomainData(buf);let power=0;for(const v of buf)power+=v*v;return {rawRms:Math.sqrt(power/buf.length),sampledFallback:true,rawZeroRunMs:null,longestRawZeroRunMs:null};};}
   if(id!==generation)return;
-  timer=setInterval(()=>{const levels=h.debugAudioLevels?.()||{};log('raw-input',{...(latest?.read?latest.read():latest||{waitingForRawFrame:true}),rawSampleAgeMs:lastRawReceivedAt===null?null:Math.round(performance.now()-lastRawReceivedAt),rawFrameStale:ctx.state!=='running'||(lastRawReceivedAt!==null&&performance.now()-lastRawReceivedAt>500),processedRms:h.lastInputRms??null,micDb:levels.micDb??null,outputRms:levels.outputRms??null,outputDb:levels.outputDb??null,outputTap:"post-limiter, before system destination",destinationMuted:levels.destinationMuted,destinationDb:levels.destinationDb,gateGain:levels.gateGain,masterGain:levels.masterGain,trim:levels.trim,ducking:levels.ducking,audioSession:audioSessionInfo(),debugContinuous:!!h.debugContinuous,voiced:h.voicePresent,pureTone:h.pureTone,gate:h.gateOpen,pitch:h.smoothedPitch??null,expectedCadenceMs:250});if(!h.lastAudioCheckLog||performance.now()-h.lastAudioCheckLog>=500){h.lastAudioCheckLog=performance.now();log('audio-check',audioCheckSnapshot());}},250);
+  let lastOutputLevelAt=-Infinity,routeRefreshPending=false;
+  const outputEvidence=()=>{
+   const now=performance.now();if(now-lastOutputLevelAt<1000)return;lastOutputLevelAt=now;
+   const check=audioCheckSnapshot(),native=window.harmonyNativeRoute||null;
+   log('output-level',{cadenceMs:1000,at:check.at,outputRms:check.outputRms,outputDb:check.outputDb,
+    outputTap:check.outputTap,micDb:check.micDb,contextState:ctx.state,
+    gainChain:gainChainSnapshot(),voiceDecision:h.voiceDecision||null,
+    route:native?{nativeBuild:native.nativeBuild,category:native.category,mode:native.mode,
+     inputs:native.inputs,outputs:native.outputs,outputType:native.outputType,
+     sampleRate:native.sampleRate,outputVolume:native.outputVolume??null,
+     outputVolumeSource:native.outputVolumeSource||null,
+     snapshotAgeMs:window.harmonyNativeRouteAt?Math.max(0,Date.now()-window.harmonyNativeRouteAt):null}:null,
+    browserRoute:check.outputLabel,physicalPlaybackVerified:false});
+   if(window.harmonyRefreshNativeRoute&&!routeRefreshPending){routeRefreshPending=true;
+    Promise.resolve().then(()=>{if(id===generation&&h.isRunning&&d.enabled)return window.harmonyRefreshNativeRoute();})
+     .catch(error=>{if(id===generation&&h.isRunning&&d.enabled)log('output-route-read-error',{name:error.name||'Error'});})
+     .finally(()=>{routeRefreshPending=false;});
+   }
+  };
+  timer=setInterval(()=>{outputEvidence();const levels=h.debugAudioLevels?.()||{};log('raw-input',{...(latest?.read?latest.read():latest||{waitingForRawFrame:true}),rawSampleAgeMs:lastRawReceivedAt===null?null:Math.round(performance.now()-lastRawReceivedAt),rawFrameStale:ctx.state!=='running'||(lastRawReceivedAt!==null&&performance.now()-lastRawReceivedAt>500),processedRms:h.lastInputRms??null,micDb:levels.micDb??null,outputRms:levels.outputRms??null,outputDb:levels.outputDb??null,outputTap:"post-limiter, before system destination",destinationMuted:levels.destinationMuted,destinationDb:levels.destinationDb,gateGain:levels.gateGain,masterGain:levels.masterGain,trim:levels.trim,ducking:levels.ducking,audioSession:audioSessionInfo(),debugContinuous:!!h.debugContinuous,voiced:h.voicePresent,pureTone:h.pureTone,gate:h.gateOpen,pitch:h.smoothedPitch??null,expectedCadenceMs:250});if(!h.lastAudioCheckLog||performance.now()-h.lastAudioCheckLog>=500){h.lastAudioCheckLog=performance.now();log('audio-check',audioCheckSnapshot());}},250);
  };
  h.start=async(...args)=>{const operation=audioOperation;if(!h.isRunning)lastActiveAudioCheck=null;await originalStart(...args);if(operation!==audioOperation){if(h.isRunning)originalStop();return;}if(h.isRunning)await attach();};
  d.panel.querySelector('input').addEventListener('change',()=>{recordBoundary=performance.now();if(!d.enabled)lastActiveAudioCheck=null;generation++;cleanup();cleanup=()=>{};if(d.enabled&&h.isRunning){attach().catch(()=>{});d.start(h);}});

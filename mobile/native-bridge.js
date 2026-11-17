@@ -59,7 +59,10 @@ window.addEventListener('DOMContentLoaded', () => {
  window.harmonyNativeIdle=()=>idleCleanup;
  mediaState(false);
  const originalStart=h.start.bind(h), originalStop=h.stop.bind(h);
- const route = data => { window.harmonyNativeRoute=data; h.logEvent('native-route',data); };
+ const cacheRoute = data => { window.harmonyNativeRoute=data; window.harmonyNativeRouteAt=Date.now(); return data; };
+ const route = data => { cacheRoute(data); h.logEvent('native-route',data); };
+ // Read-only diagnostic refresh. Never configures or activates the native audio session.
+ window.harmonyRefreshNativeRoute=async()=>cacheRoute(await p.getRoute());
  const originalMetadata=window.harmonySessionMetadata;
  window.harmonySessionMetadata=()=>({...originalMetadata?.(),native:window.harmonyNativeRoute?.nativeBuild||{platform:'ios',sessionOwner:'webkit'},nativeRoute:window.harmonyNativeRoute||null});
  const applyRoute = data => {
